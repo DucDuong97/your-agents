@@ -139,7 +139,7 @@ export async function getOpenAIModels(apiKey: string): Promise<Array<ModelInfo>>
     });
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch models: ${response.statusText}`);
+      // throw new Error(`Failed to fetch models: ${response.statusText}`);
     }
 
     const data = await response.json();

@@ -6,16 +6,25 @@ interface GlobalSettingsModalProps {
   initialConfig: GlobalConfig;
   onSubmit: (config: GlobalConfig) => void;
   onClose: () => void;
+  neededProviders?: {
+    openai: boolean;
+    openrouter: boolean;
+  };
 }
 
 export default function GlobalSettingsModal({
   initialConfig,
   onSubmit,
   onClose,
+  neededProviders = { openai: true, openrouter: true }
 }: GlobalSettingsModalProps) {
   const { register, handleSubmit } = useForm<GlobalConfig>({
     defaultValues: initialConfig,
   });
+
+  // If no providers are specified, show all inputs
+  const showOpenRouter = neededProviders.openrouter;
+  const showOpenAI = neededProviders.openai;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -25,52 +34,68 @@ export default function GlobalSettingsModal({
             API Settings
           </h2>
           
+          <div className="mb-4 text-sm text-gray-600 dark:text-gray-400 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-md">
+            <p className="font-medium text-blue-700 dark:text-blue-300 mb-1">Privacy Notice</p>
+            <p>Your API keys are stored only in your browser&apos;s local storage and are never sent to our servers. 
+            They are used exclusively to make requests directly from your browser to the respective AI providers.</p>
+          </div>
+          
           <form onSubmit={handleSubmit(onSubmit)}>
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                OpenRouter API Key
-              </label>
-              <input
-                type="password"
-                {...register('openrouterApiKey')}
-                className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
-                placeholder="Enter your OpenRouter API key"
-              />
-              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                Get your API key at{' '}
-                <a
-                  href="https://openrouter.ai/keys"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-500 hover:underline"
-                >
-                  openrouter.ai/keys
-                </a>
-              </p>
-            </div>
+            {showOpenRouter && (
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  OpenRouter API Key
+                </label>
+                <input
+                  type="password"
+                  {...register('openrouterApiKey')}
+                  className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+                  placeholder="Enter your OpenRouter API key"
+                />
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  Get your API key at{' '}
+                  <a
+                    href="https://openrouter.ai/keys"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-500 hover:underline"
+                  >
+                    openrouter.ai/keys
+                  </a>
+                </p>
+              </div>
+            )}
             
-            <div className="mb-6">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                OpenAI API Key
-              </label>
-              <input
-                type="password"
-                {...register('openaiApiKey')}
-                className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
-                placeholder="Enter your OpenAI API key"
-              />
-              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                Get your API key at{' '}
-                <a
-                  href="https://platform.openai.com/api-keys"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-500 hover:underline"
-                >
-                  platform.openai.com/api-keys
-                </a>
-              </p>
-            </div>
+            {showOpenAI && (
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  OpenAI API Key
+                </label>
+                <input
+                  type="password"
+                  {...register('openaiApiKey')}
+                  className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+                  placeholder="Enter your OpenAI API key"
+                />
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  Get your API key at{' '}
+                  <a
+                    href="https://platform.openai.com/api-keys"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-500 hover:underline"
+                  >
+                    platform.openai.com/api-keys
+                  </a>
+                </p>
+              </div>
+            )}
+            
+            {!showOpenRouter && !showOpenAI && (
+              <div className="mb-4 text-center text-gray-600 dark:text-gray-400">
+                <p>No API keys needed for your current agents.</p>
+              </div>
+            )}
             
             <div className="flex justify-end space-x-3">
               <button

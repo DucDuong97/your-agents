@@ -3,12 +3,16 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import AgentSelector from '@/components/chat/AgentSelector';
-import { ChatAgent } from '@/lib/db';
+import { ChatAgent, agentDB } from '@/lib/db';
 import GlobalSettingsModal from '@/components/chat/GlobalSettingsModal';
 import { getGlobalConfig, saveGlobalConfig } from '@/lib/storage';
 
 interface HomeState {
   showGlobalSettingsModal: boolean;
+  neededProviders: {
+    openai: boolean;
+    openrouter: boolean;
+  };
 }
 
 export default function HomePage() {
@@ -16,6 +20,10 @@ export default function HomePage() {
 
   const [state, setState] = useState<HomeState>({
     showGlobalSettingsModal: false,
+    neededProviders: {
+      openai: false,
+      openrouter: false
+    }
   });
 
   const [globalConfig, setGlobalConfig] = useState(getGlobalConfig());
@@ -29,15 +37,55 @@ export default function HomePage() {
     }));
   };
   
-  // Check if API keys are configured
+  // Check if API keys are configured and which providers are needed
   useEffect(() => {
-    const config = getGlobalConfig();
-    if (!config.openrouterApiKey && !config.openaiApiKey) {
-      setState(prev => ({ ...prev, showGlobalSettingsModal: true }));
-    }
+    const checkApiKeysAndProviders = async () => {
+      const config = getGlobalConfig();
+      const agents = await agentDB.list();
+      
+      // Determine which providers are used by existing agents
+      const neededProviders = {
+        openai: agents.some(agent => agent.provider === 'openai'),
+        openrouter: agents.some(agent => agent.provider === 'openrouter')
+      };
+      
+      // Show settings modal if any needed provider is missing its API key
+      const needsOpenAI = neededProviders.openai && !config.openaiApiKey;
+      const needsOpenRouter = neededProviders.openrouter && !config.openrouterApiKey;
+      
+      // If no agents exist yet, we don't need to show the modal
+      const shouldShowModal = agents.length > 0 && (needsOpenAI || needsOpenRouter);
+      
+      setState(prev => ({ 
+        ...prev, 
+        showGlobalSettingsModal: shouldShowModal,
+        neededProviders
+      }));
+    };
+    
+    checkApiKeysAndProviders();
   }, []);
   
   const handleSelectAgent = (agent: ChatAgent) => {
+    // Check if the agent's provider has an API key
+    const config = getGlobalConfig();
+    const needsApiKey = 
+      (agent.provider === 'openai' && !config.openaiApiKey) ||
+      (agent.provider === 'openrouter' && !config.openrouterApiKey);
+    
+    if (needsApiKey) {
+      // Update needed providers and show settings modal
+      setState(prev => ({
+        ...prev,
+        showGlobalSettingsModal: true,
+        neededProviders: {
+          ...prev.neededProviders,
+          [agent.provider]: true
+        }
+      }));
+      return;
+    }
+    
     // Navigate to the agent's chat sessions
     router.push(`/agents/${agent.id}`);
   };
@@ -79,6 +127,7 @@ export default function HomePage() {
           initialConfig={globalConfig}
           onSubmit={handleGlobalSettingsSubmit}
           onClose={() => setState(prevState => ({ ...prevState, showGlobalSettingsModal: false }))}
+          neededProviders={state.neededProviders}
         />
       )}
     </main>
