@@ -10,12 +10,14 @@ import EmptyState from '@/components/chat/EmptyState';
 import { useForm } from 'react-hook-form';
 import { generateChatCompletion, ApiMessage } from '@/lib/openrouter-client';
 import { getGlobalConfig } from '@/lib/storage';
+import { generateChatTitle } from '@/lib/promptUtils';
 
 interface ChatState {
   messages: Message[];
   selectedAgent: ChatAgent | null;
   currentChat: ChatType | null;
   isGenerating: boolean;
+  isTitleGenerating: boolean;
 }
 
 export default function SessionPage() {
@@ -28,6 +30,7 @@ export default function SessionPage() {
     selectedAgent: null,
     currentChat: null,
     isGenerating: false,
+    isTitleGenerating: false,
   });
   
   const { register, handleSubmit, reset } = useForm<{ message: string }>();
@@ -107,6 +110,33 @@ export default function SessionPage() {
     await chatDB.update(state.currentChat.id, { 
       messages: updatedMessages,
     });
+    
+    // Check if this is the first user message and generate a title if needed
+    const isFirstUserMessage = state.messages.filter(msg => msg.role === 'user').length === 0;
+    
+    if (isFirstUserMessage) {
+      setState(prevState => ({
+        ...prevState,
+        isTitleGenerating: true,
+      }));
+      
+      // Generate title in the background
+      generateChatTitle(
+        data.message,
+        state.selectedAgent.provider,
+        apiKey
+      ).then(title => {
+        // Update chat title in the database
+        chatDB.update(state.currentChat!.id, { title });
+      }).catch(error => {
+        console.error('Error generating chat title:', error);
+      }).finally(() => {
+        setState(prevState => ({
+          ...prevState,
+          isTitleGenerating: false,
+        }));
+      });
+    }
     
     // Reset the form after sending
     reset();
@@ -204,7 +234,12 @@ export default function SessionPage() {
           
           <div>
             <h1 className="text-xl font-bold text-gray-800 dark:text-white">
-              AI Chat
+              {state.currentChat?.title || 'AI Chat'}
+              {state.isTitleGenerating && (
+                <span className="ml-2 text-xs text-gray-500 dark:text-gray-400 animate-pulse">
+                  Generating title...
+                </span>
+              )}
             </h1>
             {state.selectedAgent?.name && (
               <p className="text-sm text-gray-500 dark:text-gray-400">

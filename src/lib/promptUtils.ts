@@ -235,4 +235,67 @@ export function generateExamplePromptsSync(
   }
   
   return prompts;
+}
+
+/**
+ * Generates a title for a chat session based on the first user message
+ * @param userMessage The first user message in the chat
+ * @param provider API provider (openai or openrouter)
+ * @param apiKey API key for the provider
+ * @returns Generated title for the chat session
+ */
+export async function generateChatTitle(
+  userMessage: string,
+  provider: 'openrouter' | 'openai',
+  apiKey: string
+): Promise<string> {
+  // Default title in case API call fails
+  const defaultTitle = `Chat ${new Date().toLocaleString()}`;
+  
+  try {
+    // If no API key is available, return default title
+    if (!apiKey) {
+      console.warn('No API key available for generating chat title');
+      return defaultTitle;
+    }
+    
+    // Create a prompt to ask the LLM to generate a title
+    const titleGenerationMessage = `
+Generate a short, descriptive title (maximum 6 words) for a chat conversation that starts with this user message:
+
+"${userMessage}"
+
+The title should be concise, relevant to the topic, and help the user identify the conversation later.
+Return ONLY the title text with no quotes, explanations, or additional formatting.
+`;
+
+    // Call the API to generate a title using GPT-4o
+    const response = await generateChatCompletion({
+      messages: [
+        { role: 'system', content: 'You are a helpful assistant that generates concise, descriptive titles.' },
+        { role: 'user', content: titleGenerationMessage }
+      ],
+      // Always use gpt-4o for title generation, regardless of the agent's model
+      model: provider === 'openrouter' ? "openai/gpt-4o" : "gpt-4o",
+      apiKey,
+      provider,
+    });
+    
+    // Clean up the response
+    const title = response.content
+      .trim()
+      .replace(/^["']|["']$/g, '') // Remove surrounding quotes if present
+      .replace(/\.$/, '');         // Remove trailing period if present
+    
+    // If we got a valid title, return it
+    if (title && title.length > 0) {
+      return title;
+    }
+    
+    // Fallback to default title if response was empty
+    return defaultTitle;
+  } catch (error) {
+    console.error('Error generating chat title:', error);
+    return defaultTitle;
+  }
 } 
