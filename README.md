@@ -1,36 +1,74 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# AI Chat Application
+
+A modern chat application that allows you to have conversations with AI models through OpenRouter or OpenAI APIs. All API calls are made directly from the client, ensuring your data stays private.
+
+## Features
+
+- **Client-side API Calls**: All API calls are made directly from your browser to OpenRouter or OpenAI
+- **User-provided API Keys**: Use your own OpenRouter or OpenAI API key
+- **Multiple AI Models**: Choose from a variety of AI models from different providers
+- **Local Storage**: Chat history and settings are stored in your browser's localStorage
+- **Dark Mode Support**: Comfortable UI for both light and dark themes
+- **Responsive Design**: Works on desktop and mobile devices
+
+## Privacy Features
+
+- **Client-side API Calls**: All API requests are made directly from your browser to OpenRouter or OpenAI
+- **Local Data Storage**: Your API keys and chat history are stored in your browser's localStorage
+- **No Server Processing**: The server only serves static files and doesn't process any user data
+
+## Prerequisites
+
+- Node.js 18.17.0 or later
+- An OpenRouter API key (get one at [OpenRouter](https://openrouter.ai))
 
 ## Getting Started
 
-First, run the development server:
+1. Clone the repository:
+
+```bash
+git clone <repository-url>
+cd chat-bot
+```
+
+2. Install dependencies:
+
+```bash
+npm install
+```
+
+3. Start the development server:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+4. Open [http://localhost:3000](http://localhost:3000) in your browser to see the application.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Usage
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. When you first open the application, you'll be prompted to enter your API key and select a provider (OpenRouter or OpenAI)
+2. Enter your API key and customize the system prompt if desired
+3. Select an AI model from the dropdown
+4. Start chatting with the AI!
 
-## Learn More
+## Data Storage
 
-To learn more about Next.js, take a look at the following resources:
+All data is stored locally in your browser using localStorage. This includes:
+- Chat history
+- System prompt
+- Selected model
+- API keys (stored securely in your browser only)
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+No data is sent to the server or stored in a database.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Technologies Used
 
-## Deploy on Vercel
+- Next.js
+- React
+- TypeScript
+- Tailwind CSS
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## License
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+MIT
