@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ChatAgent, agentDB } from '@/lib/db';
 import AgentModal from './AgentModal';
 import AgentImport from './AgentImport';
+import AgentTemplateModal from './AgentTemplateModal';
 
 interface AgentSelectorProps {
   onSelectAgent: (agent: ChatAgent) => void;
@@ -12,6 +13,8 @@ export default function AgentSelector({ onSelectAgent }: AgentSelectorProps) {
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
+  const [initialAgentData, setInitialAgentData] = useState<Omit<ChatAgent, 'id' | 'createdAt' | 'updatedAt'> | undefined>();
 
   useEffect(() => {
     loadAgents();
@@ -33,10 +36,17 @@ export default function AgentSelector({ onSelectAgent }: AgentSelectorProps) {
       const newAgent = await agentDB.create(agentData);
       setAgents(prev => [newAgent, ...prev]);
       setShowCreateModal(false);
+      setInitialAgentData(undefined);
     } catch (error) {
       console.error('Failed to create agent:', error);
       alert('Failed to create agent. Please try again.');
     }
+  };
+
+  const handleTemplateSelect = (templateData: Omit<ChatAgent, 'id' | 'createdAt' | 'updatedAt'>) => {
+    setInitialAgentData(templateData);
+    setShowTemplateModal(false);
+    setShowCreateModal(true);
   };
 
   const handleDeleteAgent = async (agentId: string, e: React.MouseEvent) => {
@@ -101,13 +111,22 @@ export default function AgentSelector({ onSelectAgent }: AgentSelectorProps) {
         <h2 className="text-xl font-bold text-gray-900 dark:text-white">Select an Agent</h2>
         <div className="flex space-x-2">
           <button
+            onClick={() => setShowTemplateModal(true)}
+            className="px-3 py-1 text-sm bg-green-500 hover:bg-green-600 text-white rounded"
+          >
+            Use Template
+          </button>
+          <button
             onClick={() => setShowImportModal(true)}
             className="px-3 py-1 text-sm bg-purple-500 hover:bg-purple-600 text-white rounded"
           >
             Import Agent
           </button>
           <button
-            onClick={() => setShowCreateModal(true)}
+            onClick={() => {
+              setInitialAgentData(undefined);
+              setShowCreateModal(true);
+            }}
             className="px-3 py-1 text-sm bg-blue-500 hover:bg-blue-600 text-white rounded"
           >
             Create Agent
@@ -170,8 +189,12 @@ export default function AgentSelector({ onSelectAgent }: AgentSelectorProps) {
 
       {showCreateModal && (
         <AgentModal
+          initialAgent={initialAgentData}
           onSubmit={handleCreateAgent}
-          onClose={() => setShowCreateModal(false)}
+          onClose={() => {
+            setShowCreateModal(false);
+            setInitialAgentData(undefined);
+          }}
         />
       )}
 
@@ -179,6 +202,13 @@ export default function AgentSelector({ onSelectAgent }: AgentSelectorProps) {
         <AgentImport
           onClose={() => setShowImportModal(false)}
           onImportSuccess={loadAgents}
+        />
+      )}
+
+      {showTemplateModal && (
+        <AgentTemplateModal
+          onSelect={handleTemplateSelect}
+          onClose={() => setShowTemplateModal(false)}
         />
       )}
     </div>

@@ -4,9 +4,17 @@ import { ChatAgent } from '@/lib/db';
 import { getOpenRouterModels, getOpenAIModels, ModelInfo } from '@/lib/openrouter-client';
 import { getGlobalConfig } from '@/lib/storage';
 import { generateExamplePrompts, generateExamplePromptsSync } from '@/lib/promptUtils';
+import agentTemplates from '@/app/assets/agentTemplates.json';
+
+interface AgentTemplate {
+  name: string;
+  systemPrompt: string;
+  modelName: string;
+  provider: string;
+}
 
 interface AgentModalProps {
-  initialAgent?: ChatAgent;
+  initialAgent?: Omit<ChatAgent, 'id' | 'createdAt' | 'updatedAt'> | ChatAgent;
   onSubmit: (agent: Omit<ChatAgent, 'id' | 'createdAt' | 'updatedAt'>) => void;
   onClose: () => void;
 }
@@ -19,7 +27,7 @@ export default function AgentModal({ initialAgent, onSubmit, onClose }: AgentMod
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const { register, handleSubmit, setValue, watch } = useForm<Omit<ChatAgent, 'id' | 'createdAt' | 'updatedAt'>>({
+  const { register, handleSubmit, setValue, watch, reset } = useForm<Omit<ChatAgent, 'id' | 'createdAt' | 'updatedAt'>>({
     defaultValues: initialAgent ? {
       name: initialAgent.name,
       systemPrompt: initialAgent.systemPrompt,
@@ -36,6 +44,17 @@ export default function AgentModal({ initialAgent, onSubmit, onClose }: AgentMod
   });
 
   const watchProvider = watch('provider');
+
+  const handleTemplateSelect = (template: AgentTemplate) => {
+    reset({
+      name: template.name,
+      systemPrompt: template.systemPrompt,
+      modelName: template.modelName,
+      provider: template.provider as 'openrouter' | 'openai',
+      examplePrompts: [],
+    });
+    setSelectedProvider(template.provider as 'openrouter' | 'openai');
+  };
 
   useEffect(() => {
     // Load available models
@@ -114,6 +133,28 @@ export default function AgentModal({ initialAgent, onSubmit, onClose }: AgentMod
           </h2>
           
           <form onSubmit={handleSubmit(handleFormSubmit)}>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Template (Optional)
+              </label>
+              <select
+                onChange={(e) => {
+                  const template = agentTemplates.find(t => t.name === e.target.value);
+                  if (template) {
+                    handleTemplateSelect(template);
+                  }
+                }}
+                className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white mb-4"
+              >
+                <option value="">Select a template...</option>
+                {agentTemplates.map((template, index) => (
+                  <option key={index} value={template.name}>
+                    {template.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Agent Name

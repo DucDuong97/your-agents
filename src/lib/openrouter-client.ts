@@ -140,6 +140,12 @@ export async function getOpenAIModels(apiKey: string): Promise<Array<ModelInfo>>
 
     if (!response.ok) {
       // throw new Error(`Failed to fetch models: ${response.statusText}`);
+      return [
+        { id: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo', provider: 'openai' },
+        { id: 'gpt-4', name: 'GPT-4', provider: 'openai' },
+        { id: 'gpt-4-turbo', name: 'GPT-4 Turbo', provider: 'openai' },
+        { id: 'gpt-4o', name: 'GPT-4o', provider: 'openai' },
+      ];
     }
 
     const data = await response.json();
