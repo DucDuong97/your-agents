@@ -1,5 +1,8 @@
 import React from 'react';
 import { Message } from '@/lib/db';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { Highlight, themes } from 'prism-react-renderer';
 
 interface MessageListProps {
   messages: Message[];
@@ -8,49 +11,90 @@ interface MessageListProps {
 
 export default function MessageList({ messages, isGenerating = false }: MessageListProps) {
   return (
-    <div className="space-y-4">
+    <div className="space-y-6 px-4 py-2">
       {messages.map((message) => (
-        <div
-          key={message.id}
-          className={`flex ${
-            message.role === 'user' ? 'justify-end' : 'justify-start'
-          }`}
-        >
-          <div
-            className={`max-w-[80%] rounded-lg p-4 ${
-              message.role === 'user'
-                ? 'bg-blue-500 text-white'
+        <div key={message.id} className="message-container">
+          <div className="flex items-center gap-2 mb-1">
+            <span className={`font-semibold ${
+              message.role === 'user' 
+                ? 'text-blue-500' 
                 : message.role === 'system'
-                ? 'bg-purple-500 text-white'
-                : 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white'
-            }`}
-          >
-            <div className="flex items-center mb-1">
-              <span className="font-semibold">
-                {message.role === 'user'
-                  ? 'You'
-                  : message.role === 'system'
-                  ? 'System'
-                  : 'AI'}
-              </span>
-              <span className="text-xs opacity-70 ml-2">
-                {new Date(message.createdAt).toLocaleTimeString()}
-              </span>
-            </div>
-            <div className="whitespace-pre-wrap">{message.content}</div>
+                ? 'text-purple-500'
+                : 'text-gray-700 dark:text-gray-300'
+            }`}>
+              {message.role === 'user'
+                ? 'You'
+                : message.role === 'system'
+                ? 'System'
+                : 'AI'}
+            </span>
+            <span className="text-xs text-gray-500">
+              {new Date(message.createdAt).toLocaleTimeString()}
+            </span>
           </div>
+          <div className="prose dark:prose-invert max-w-none">
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={{
+                code: ({ className, children, ...props }: any) => {
+                  const match = /language-(\w+)/.exec(className || '');
+                  const language = match ? match[1] : '';
+                  const isInline = !match && !className;
+                  
+                  return !isInline ? (
+                    <div className="rounded-md overflow-hidden">
+                      <Highlight
+                        theme={themes.dracula}
+                        code={String(children).replace(/\n$/, '')}
+                        language={language || 'text'}
+                      >
+                        {({className, style, tokens, getLineProps, getTokenProps}) => (
+                          <pre className={className} style={{...style, margin: 0, padding: '1rem'}}>
+                            {tokens.map((line, i) => (
+                              <div key={i} {...getLineProps({line})}>
+                                {line.map((token, key) => (
+                                  <span key={key} {...getTokenProps({token})} />
+                                ))}
+                              </div>
+                            ))}
+                          </pre>
+                        )}
+                      </Highlight>
+                    </div>
+                  ) : (
+                    <code className="bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded" {...props}>
+                      {children}
+                    </code>
+                  );
+                },
+                a: (props) => (
+                  <a className="text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300" {...props} />
+                ),
+                blockquote: (props) => (
+                  <blockquote className="border-l-4 border-gray-200 dark:border-gray-700 pl-4 italic" {...props} />
+                ),
+                ul: (props) => (
+                  <ul className="list-disc list-inside" {...props} />
+                ),
+                ol: (props) => (
+                  <ol className="list-decimal list-inside" {...props} />
+                ),
+              }}
+            >
+              {message.content}
+            </ReactMarkdown>
+          </div>
+          <div className="border-b border-gray-200 dark:border-gray-700 mt-4"></div>
         </div>
       ))}
       
       {isGenerating && (
-        <div className="flex justify-start">
-          <div className="max-w-[80%] rounded-lg p-4 bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white">
-            <div className="flex items-center mb-1">
-              <span className="font-semibold">AI</span>
-            </div>
-            <div className="flex items-center">
-              <div className="dot-typing"></div>
-            </div>
+        <div className="message-container">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="font-semibold text-gray-700 dark:text-gray-300">AI</span>
+          </div>
+          <div className="flex items-center">
+            <div className="dot-typing"></div>
           </div>
         </div>
       )}
