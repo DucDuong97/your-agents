@@ -9,6 +9,66 @@ interface MessageListProps {
   isGenerating?: boolean;
 }
 
+// Create a separate CodeBlock component to handle the tooltip state
+const CodeBlock = ({ language, code }: { language: string; code: string }) => {
+  const [showTooltip, setShowTooltip] = React.useState(false);
+  
+  const copyToClipboard = () => {
+    navigator.clipboard.writeText(code)
+      .then(() => {
+        setShowTooltip(true);
+        setTimeout(() => {
+          setShowTooltip(false);
+        }, 2000); // Hide tooltip after 2 seconds
+        console.log('Code copied to clipboard');
+      })
+      .catch(err => {
+        console.error('Failed to copy code: ', err);
+      });
+  };
+  
+  return (
+    <div className="rounded-md overflow-hidden relative">
+      <div className="relative">
+        <button 
+          onClick={copyToClipboard}
+          className="absolute top-2 right-2 bg-gray-700 hover:bg-gray-600 text-white rounded p-1 text-xs z-10"
+          aria-label="Copy code"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+          </svg>
+        </button>
+        {showTooltip && (
+          <div className="absolute top-2 right-10 bg-gray-800 text-white text-xs rounded py-1 px-2 z-20">
+            Copied!
+          </div>
+        )}
+      </div>
+      <div className="overflow-x-auto">
+        <Highlight
+          theme={themes.dracula}
+          code={code}
+          language={language || 'text'}
+        >
+          {({className, style, tokens, getLineProps, getTokenProps}) => (
+            <pre className={className} style={{...style, margin: 0, padding: '1rem'}}>
+              {tokens.map((line, i) => (
+                <div key={i} {...getLineProps({line})}>
+                  {line.map((token, key) => (
+                    <span key={key} {...getTokenProps({token})} />
+                  ))}
+                </div>
+              ))}
+            </pre>
+          )}
+        </Highlight>
+      </div>
+    </div>
+  );
+};
+
 export default function MessageList({ messages, isGenerating = false }: MessageListProps) {
   return (
     <div className="space-y-6 px-4 py-2">
@@ -36,33 +96,18 @@ export default function MessageList({ messages, isGenerating = false }: MessageL
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
               components={{
-                code: ({ className, children, ...props }: any) => {
+                code: ({ className, children }) => {
                   const match = /language-(\w+)/.exec(className || '');
                   const language = match ? match[1] : '';
                   const isInline = !match && !className;
                   
                   return !isInline ? (
-                    <div className="rounded-md overflow-hidden">
-                      <Highlight
-                        theme={themes.dracula}
-                        code={String(children).replace(/\n$/, '')}
-                        language={language || 'text'}
-                      >
-                        {({className, style, tokens, getLineProps, getTokenProps}) => (
-                          <pre className={className} style={{...style, margin: 0, padding: '1rem'}}>
-                            {tokens.map((line, i) => (
-                              <div key={i} {...getLineProps({line})}>
-                                {line.map((token, key) => (
-                                  <span key={key} {...getTokenProps({token})} />
-                                ))}
-                              </div>
-                            ))}
-                          </pre>
-                        )}
-                      </Highlight>
-                    </div>
+                    <CodeBlock 
+                      language={language} 
+                      code={String(children).replace(/\n$/, '')} 
+                    />
                   ) : (
-                    <code className="bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded" {...props}>
+                    <code className="bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded">
                       {children}
                     </code>
                   );
