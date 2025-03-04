@@ -12,15 +12,29 @@ export default function MessageInput({
   register,
   isSubmitting,
 }: MessageInputProps) {
+  // Get the register result to access the onChange handler
+  const messageRegister = register('message', { required: true });
+  
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter') {
+      if (!e.metaKey) {
+        if (!isSubmitting) {
+          onSubmit(e);
+        }
+      }
+    }
+  };
+
   return (
     <form onSubmit={onSubmit} className="flex items-end gap-2">
       <div className="flex-1">
         <textarea
-          {...register('message', { required: true })}
+          {...messageRegister}
           className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white resize-none"
           placeholder="Type your message..."
           rows={2}
           disabled={isSubmitting}
+          onKeyDown={handleKeyDown}
         />
       </div>
       <button

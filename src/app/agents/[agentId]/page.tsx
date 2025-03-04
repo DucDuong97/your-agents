@@ -64,9 +64,13 @@ export default function AgentPage() {
           examplePrompts: updatedAgent.examplePrompts,
         });
         
+        // Update both the selectedAgent state and the agentName
+        setSelectedAgent(updatedAgent);
+        setAgentName(updatedAgent.name);
+        
+        // Close the modal
         setState(prevState => ({
           ...prevState,
-          selectedAgent: updatedAgent,
           showAgentSettingsModal: false,
         }));
       } catch (error) {
