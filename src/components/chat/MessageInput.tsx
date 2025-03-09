@@ -30,9 +30,10 @@ export default function MessageInput({
       <div className="flex-1">
         <textarea
           {...messageRegister}
-          className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white resize-none"
+          className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white resize-none text-base sm:text-sm"
           placeholder="Type your message..."
-          rows={2}
+          rows={1}
+          style={{ minHeight: '44px', maxHeight: '160px' }}
           disabled={isSubmitting}
           onKeyDown={handleKeyDown}
         />
@@ -40,12 +41,12 @@ export default function MessageInput({
       <button
         type="submit"
         disabled={isSubmitting}
-        className="px-4 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+        className="px-4 py-2.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed min-w-[72px] h-[44px] touch-manipulation flex items-center justify-center"
       >
         {isSubmitting ? (
           <span className="flex items-center">
             <svg
-              className="animate-spin -ml-1 mr-2 h-4 w-4 text-white"
+              className="animate-spin h-5 w-5 text-white"
               xmlns="http://www.w3.org/2000/svg"
               fill="none"
               viewBox="0 0 24 24"
@@ -64,7 +65,6 @@ export default function MessageInput({
                 d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
               ></path>
             </svg>
-            Sending
           </span>
         ) : (
           'Send'

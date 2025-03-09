@@ -71,11 +71,11 @@ const CodeBlock = ({ language, code }: { language: string; code: string }) => {
 
 export default function MessageList({ messages, isGenerating = false }: MessageListProps) {
   return (
-    <div className="space-y-6 px-4 py-2">
+    <div className="space-y-4 sm:space-y-6 px-2 sm:px-4 py-2">
       {messages.map((message) => (
         <div key={message.id} className="message-container">
           <div className="flex items-center gap-2 mb-1">
-            <span className={`font-semibold ${
+            <span className={`font-semibold text-sm sm:text-base ${
               message.role === 'user' 
                 ? 'text-blue-500' 
                 : message.role === 'system'
@@ -88,11 +88,11 @@ export default function MessageList({ messages, isGenerating = false }: MessageL
                 ? 'System'
                 : 'AI'}
             </span>
-            <span className="text-xs text-gray-500">
+            <span className="text-[10px] sm:text-xs text-gray-500">
               {new Date(message.createdAt).toLocaleTimeString()}
             </span>
           </div>
-          <div className="prose dark:prose-invert max-w-none">
+          <div className="prose dark:prose-invert max-w-none text-sm sm:text-base leading-relaxed">
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
               components={{
@@ -107,22 +107,25 @@ export default function MessageList({ messages, isGenerating = false }: MessageL
                       code={String(children).replace(/\n$/, '')} 
                     />
                   ) : (
-                    <code className="bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded">
+                    <code className="bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded text-sm">
                       {children}
                     </code>
                   );
                 },
                 a: (props) => (
-                  <a className="text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300" {...props} />
+                  <a className="text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300 break-words" {...props} />
                 ),
                 blockquote: (props) => (
-                  <blockquote className="border-l-4 border-gray-200 dark:border-gray-700 pl-4 italic" {...props} />
+                  <blockquote className="border-l-4 border-gray-200 dark:border-gray-700 pl-4 italic my-2" {...props} />
                 ),
                 ul: (props) => (
-                  <ul className="list-disc list-inside" {...props} />
+                  <ul className="list-disc list-inside space-y-1 my-2" {...props} />
                 ),
                 ol: (props) => (
-                  <ol className="list-decimal list-inside" {...props} />
+                  <ol className="list-decimal list-inside space-y-1 my-2" {...props} />
+                ),
+                p: (props) => (
+                  <p className="whitespace-pre-wrap break-words my-2" {...props} />
                 ),
               }}
             >
@@ -136,7 +139,7 @@ export default function MessageList({ messages, isGenerating = false }: MessageL
       {isGenerating && (
         <div className="message-container">
           <div className="flex items-center gap-2 mb-1">
-            <span className="font-semibold text-gray-700 dark:text-gray-300">AI</span>
+            <span className="font-semibold text-sm sm:text-base text-gray-700 dark:text-gray-300">AI</span>
           </div>
           <div className="flex items-center">
             <div className="dot-typing"></div>
@@ -148,9 +151,9 @@ export default function MessageList({ messages, isGenerating = false }: MessageL
         .dot-typing {
           position: relative;
           left: -9999px;
-          width: 10px;
-          height: 10px;
-          border-radius: 5px;
+          width: 8px;
+          height: 8px;
+          border-radius: 4px;
           background-color: #6b7280;
           color: #6b7280;
           box-shadow: 9984px 0 0 0 #6b7280, 9999px 0 0 0 #6b7280, 10014px 0 0 0 #6b7280;
@@ -162,19 +165,19 @@ export default function MessageList({ messages, isGenerating = false }: MessageL
             box-shadow: 9984px 0 0 0 #6b7280, 9999px 0 0 0 #6b7280, 10014px 0 0 0 #6b7280;
           }
           16.667% {
-            box-shadow: 9984px -10px 0 0 #6b7280, 9999px 0 0 0 #6b7280, 10014px 0 0 0 #6b7280;
+            box-shadow: 9984px -8px 0 0 #6b7280, 9999px 0 0 0 #6b7280, 10014px 0 0 0 #6b7280;
           }
           33.333% {
             box-shadow: 9984px 0 0 0 #6b7280, 9999px 0 0 0 #6b7280, 10014px 0 0 0 #6b7280;
           }
           50% {
-            box-shadow: 9984px 0 0 0 #6b7280, 9999px -10px 0 0 #6b7280, 10014px 0 0 0 #6b7280;
+            box-shadow: 9984px 0 0 0 #6b7280, 9999px -8px 0 0 #6b7280, 10014px 0 0 0 #6b7280;
           }
           66.667% {
             box-shadow: 9984px 0 0 0 #6b7280, 9999px 0 0 0 #6b7280, 10014px 0 0 0 #6b7280;
           }
           83.333% {
-            box-shadow: 9984px 0 0 0 #6b7280, 9999px 0 0 0 #6b7280, 10014px -10px 0 0 #6b7280;
+            box-shadow: 9984px 0 0 0 #6b7280, 9999px 0 0 0 #6b7280, 10014px -8px 0 0 #6b7280;
           }
           100% {
             box-shadow: 9984px 0 0 0 #6b7280, 9999px 0 0 0 #6b7280, 10014px 0 0 0 #6b7280;

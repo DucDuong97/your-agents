@@ -228,12 +228,10 @@ export default function SessionPage() {
   
   return (
     <div className="flex flex-col h-screen bg-gray-50 dark:bg-gray-900">
-
-      <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-4">
+      <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-3 sm:p-4 sticky top-0 z-10">
         <div className="max-w-3xl mx-auto flex justify-between items-center">
-          
-          <div>
-            <h1 className="text-xl font-bold text-gray-800 dark:text-white">
+          <div className="min-w-0 flex-1">
+            <h1 className="text-lg sm:text-xl font-bold text-gray-800 dark:text-white truncate">
               {state.currentChat?.title || 'AI Chat'}
               {state.isTitleGenerating && (
                 <span className="ml-2 text-xs text-gray-500 dark:text-gray-400 animate-pulse">
@@ -242,24 +240,24 @@ export default function SessionPage() {
               )}
             </h1>
             {state.selectedAgent?.name && (
-              <p className="text-sm text-gray-500 dark:text-gray-400">
+              <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 truncate">
                 Agent: {state.selectedAgent.name}
               </p>
             )}
           </div>
 
-          <div className="flex space-x-2">
+          <div className="flex space-x-2 ml-2">
             <button
               onClick={handleClearChat}
-              className="px-3 py-1 text-sm bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded"
+              className="px-2 sm:px-3 py-2 text-sm bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg touch-manipulation"
             >
-              Clear Chat
+              Clear
             </button>
           </div>
         </div>
       </header>
       
-      <div className="flex-1 overflow-y-auto p-4 md:p-6">
+      <div className="flex-1 overflow-y-auto p-2 sm:p-4 md:p-6">
         <div className="max-w-3xl mx-auto">
           {state.messages.length === 0 ? (
             <EmptyState 
@@ -277,7 +275,7 @@ export default function SessionPage() {
         </div>
       </div>
       
-      <div className="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4">
+      <div className="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-2 sm:p-4 sticky bottom-0">
         <div className="max-w-3xl mx-auto">
           <MessageInput 
             onSubmit={handleSubmit(onSendMessage)}
@@ -286,7 +284,6 @@ export default function SessionPage() {
           />
         </div>
       </div>
-
     </div>
   );
 } 

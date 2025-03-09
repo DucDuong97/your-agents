@@ -17,8 +17,9 @@ export const metadata: Metadata = {
   viewport: {
     width: "device-width",
     initialScale: 1,
-    maximumScale: 1,
-    userScalable: false,
+    maximumScale: 5,
+    userScalable: true,
+    viewportFit: "cover",
   },
   icons: {
     icon: [
@@ -44,7 +45,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" className="h-full">
       <head>
         <meta name="application-name" content="AI Chat Assistant" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -53,6 +54,7 @@ export default function RootLayout({
         <meta name="format-detection" content="telephone=no" />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="theme-color" content="#4f46e5" />
+        <meta name="color-scheme" content="light dark" />
         
         <link rel="apple-touch-icon" href="/icons/icon-152x152.png" />
         <link rel="apple-touch-icon" sizes="152x152" href="/icons/icon-152x152.png" />
@@ -61,7 +63,7 @@ export default function RootLayout({
         <link rel="manifest" href="/manifest.json" />
         <link rel="shortcut icon" href="/icons/icon-72x72.png" />
       </head>
-      <body className={inter.className}>
+      <body className={`${inter.className} h-full overscroll-none`}>
         <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
           {children}
         </div>
