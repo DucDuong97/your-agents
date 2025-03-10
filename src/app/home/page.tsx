@@ -6,9 +6,11 @@ import AgentSelector from '@/components/chat/AgentSelector';
 import { ChatAgent, agentDB } from '@/lib/db';
 import GlobalSettingsModal from '@/components/chat/GlobalSettingsModal';
 import { getGlobalConfig, saveGlobalConfig } from '@/lib/storage';
+import UserInfoModal from '@/components/UserInfoModal';
 
 interface HomeState {
   showGlobalSettingsModal: boolean;
+  showUserInfoModal: boolean;
   neededProviders: {
     openai: boolean;
     openrouter: boolean;
@@ -20,6 +22,7 @@ export default function HomePage() {
 
   const [state, setState] = useState<HomeState>({
     showGlobalSettingsModal: false,
+    showUserInfoModal: false,
     neededProviders: {
       openai: false,
       openrouter: false
@@ -29,12 +32,20 @@ export default function HomePage() {
   const [globalConfig, setGlobalConfig] = useState(getGlobalConfig());
   
   const handleGlobalSettingsSubmit = (config: { openrouterApiKey: string; openaiApiKey: string }) => {
-    saveGlobalConfig(config);
-    setGlobalConfig(config);
+    const newConfig = { ...globalConfig, ...config };
+    saveGlobalConfig(newConfig);
+    setGlobalConfig(newConfig);
     setState(prevState => ({
       ...prevState,
       showGlobalSettingsModal: false,
     }));
+  };
+
+  const handleUserInfoSubmit = (data: { userNickname: string; userJobTitle: string }) => {
+    const newConfig = { ...globalConfig, ...data };
+    saveGlobalConfig(newConfig);
+    setGlobalConfig(newConfig);
+    setState(prevState => ({ ...prevState, showUserInfoModal: false }));
   };
   
   // Check if API keys are configured and which providers are needed
@@ -64,6 +75,16 @@ export default function HomePage() {
     };
     
     checkApiKeysAndProviders();
+
+    // Check if user info is set
+    const checkUserInfo = () => {
+      const { userNickname, userJobTitle } = getGlobalConfig();
+      if (!userNickname || !userJobTitle) {
+        setState(prevState => ({ ...prevState, showUserInfoModal: true }));
+      }
+    };
+
+    checkUserInfo();
   }, []);
   
   const handleSelectAgent = (agent: ChatAgent) => {
@@ -128,6 +149,13 @@ export default function HomePage() {
           onSubmit={handleGlobalSettingsSubmit}
           onClose={() => setState(prevState => ({ ...prevState, showGlobalSettingsModal: false }))}
           neededProviders={state.neededProviders}
+        />
+      )}
+
+      {state.showUserInfoModal && (
+        <UserInfoModal
+          initialValues={globalConfig}
+          onSubmit={handleUserInfoSubmit}
         />
       )}
     </main>

@@ -179,18 +179,35 @@ export default function SessionPage() {
     reset();
     
     try {
-      // Convert messages to API format
-      const apiMessages: ApiMessage[] = [
-        { 
-          role: 'system', 
-          content: state.selectedAgent.oneShotExample 
-            ? `${state.selectedAgent.systemPrompt}\n\n${state.selectedAgent.oneShotExample}` 
-            : state.selectedAgent.systemPrompt 
-        },
-      ];
+      // Convert API messages from the current chat
+      const apiMessages: ApiMessage[] = [];
       
-      // Add user and assistant messages with proper format
+      // Get user information from global config
+      const { userNickname, userJobTitle } = getGlobalConfig();
+      
+      // Add the system prompt first
+      const systemPrompt = state.selectedAgent.oneShotExample 
+        ? `${state.selectedAgent.systemPrompt}\n\n${state.selectedAgent.oneShotExample}` 
+        : state.selectedAgent.systemPrompt;
+      let enhancedSystemPrompt = systemPrompt;
+      
+      // Add user information to the system prompt if available
+      if (userNickname && userJobTitle) {
+        const userInfoPrompt = `\n\nYou are chatting with ${userNickname}, who works as a ${userJobTitle}.`;
+        enhancedSystemPrompt = `${systemPrompt}${userInfoPrompt}`;
+      }
+      
+      apiMessages.push({
+        role: 'system',
+        content: enhancedSystemPrompt
+      });
+      
+      // Add the chat history
       for (const msg of updatedMessages) {
+        // Skip system messages as we already added our enhanced system prompt
+        if (msg.role === 'system') continue;
+        
+        // Handle messages with images
         if (msg.rawContent && msg.role === 'user') {
           // If the message has structured content (for images), use it
           apiMessages.push({
