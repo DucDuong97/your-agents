@@ -6,6 +6,7 @@ import { useParams } from 'next/navigation';
 import ChatSessionList from '@/components/chat/ChatSessionList';
 import { agentDB, Chat, ChatAgent, chatDB } from '@/lib/db';
 import AgentModal from '@/components/chat/AgentModal';
+import { ArrowLeft } from 'lucide-react';
 
 interface AgentState {
   showAgentSettingsModal: boolean;
@@ -114,22 +115,26 @@ export default function AgentPage() {
     <main className="flex flex-col min-h-screen bg-gray-50 dark:bg-gray-900">
       <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-4">
         <div className="max-w-3xl mx-auto flex justify-between items-center">
-          <div className="max-w-3xl">
-            <h1 className="text-2xl font-bold text-gray-800 dark:text-white">
-              {agentName}
-            </h1>
-            <p className="text-gray-600 dark:text-gray-400">
-              Select a chat session or create a new one
-            </p>
+          <div className="flex items-center">
+            <button
+              onClick={() => router.push('/home')}
+              className="p-2 mr-3 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white rounded-lg touch-manipulation"
+              aria-label="Back to home"
+              title="Back to home"
+            >
+              <ArrowLeft size={20} />
+            </button>
+            <div>
+              <h1 className="text-2xl font-bold text-gray-800 dark:text-white">
+                {agentName}
+              </h1>
+              <p className="text-gray-600 dark:text-gray-400">
+                Select a chat session or create a new one
+              </p>
+            </div>
           </div>
 
           <div className="flex space-x-2">
-            <button
-              onClick={() => router.push(`/home`)}
-              className="px-3 py-1 text-sm bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded"
-            >
-              Change Agent
-            </button>
             <button
               onClick={() => setState(prevState => ({ ...prevState, showAgentSettingsModal: true }))}
               className="px-3 py-1 text-sm bg-blue-500 hover:bg-blue-600 text-white rounded"

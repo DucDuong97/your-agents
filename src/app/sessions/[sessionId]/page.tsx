@@ -11,6 +11,8 @@ import { useForm } from 'react-hook-form';
 import { generateChatCompletion, ApiMessage } from '@/lib/openrouter-client';
 import { getGlobalConfig } from '@/lib/storage';
 import { generateChatTitle } from '@/lib/promptUtils';
+import { ArrowLeft, Home, Edit } from 'lucide-react';
+import AgentModal from '@/components/chat/AgentModal';
 
 interface ChatState {
   messages: Message[];
@@ -35,6 +37,7 @@ export default function SessionPage() {
   
   const { register, handleSubmit, reset } = useForm<{ message: string }>();
   const [loading, setLoading] = useState(true);
+  const [showAgentModal, setShowAgentModal] = useState(false);
   
   // Load chat and agent data
   useEffect(() => {
@@ -218,6 +221,36 @@ export default function SessionPage() {
     }
   };
   
+  const handleNavigateToSessions = () => {
+    router.push(`/agents/${state.selectedAgent?.id}`);
+  };
+
+  const handleNavigateToHome = () => {
+    router.push('/');
+  };
+
+  const handleEditAgent = () => {
+    if (state.selectedAgent) {
+      setShowAgentModal(true);
+    }
+  };
+  
+  const handleAgentUpdate = async (agentData: Omit<ChatAgent, 'id' | 'createdAt' | 'updatedAt'>) => {
+    try {
+      if (state.selectedAgent) {
+        const updatedAgent = await agentDB.update(state.selectedAgent.id, agentData);
+        setState(prevState => ({
+          ...prevState,
+          selectedAgent: updatedAgent
+        }));
+        setShowAgentModal(false);
+      }
+    } catch (error) {
+      console.error('Failed to update agent:', error);
+      alert('Failed to update agent. Please try again.');
+    }
+  };
+  
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -230,20 +263,50 @@ export default function SessionPage() {
     <div className="flex flex-col h-screen bg-gray-50 dark:bg-gray-900">
       <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-3 sm:p-4 sticky top-0 z-10">
         <div className="max-w-3xl mx-auto flex justify-between items-center">
-          <div className="min-w-0 flex-1">
-            <h1 className="text-lg sm:text-xl font-bold text-gray-800 dark:text-white truncate">
-              {state.currentChat?.title || 'AI Chat'}
-              {state.isTitleGenerating && (
-                <span className="ml-2 text-xs text-gray-500 dark:text-gray-400 animate-pulse">
-                  Generating title...
-                </span>
+          <div className="flex items-center">
+            <div className="flex space-x-2 mr-3">
+              <button
+                onClick={handleNavigateToSessions}
+                className="p-2 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white rounded-lg touch-manipulation"
+                aria-label="Back to sessions"
+                title="Back to sessions"
+              >
+                <ArrowLeft size={20} />
+              </button>
+              <button
+                onClick={handleNavigateToHome}
+                className="p-2 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white rounded-lg touch-manipulation"
+                aria-label="Home"
+                title="Home"
+              >
+                <Home size={20} />
+              </button>
+            </div>
+            <div className="min-w-0 flex-1">
+              <h1 className="text-lg sm:text-xl font-bold text-gray-800 dark:text-white truncate">
+                {state.currentChat?.title || 'AI Chat'}
+                {state.isTitleGenerating && (
+                  <span className="ml-2 text-xs text-gray-500 dark:text-gray-400 animate-pulse">
+                    Generating title...
+                  </span>
+                )}
+              </h1>
+              {state.selectedAgent?.name && (
+                <div className="flex items-center text-xs sm:text-sm text-gray-500 dark:text-gray-400">
+                  <span className="truncate mr-1">Agent: {state.selectedAgent.name}</span>
+                  {state.selectedAgent && (
+                    <button
+                      onClick={handleEditAgent}
+                      className="p-1 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 rounded touch-manipulation"
+                      aria-label="Edit agent"
+                      title="Edit agent"
+                    >
+                      <Edit size={14} />
+                    </button>
+                  )}
+                </div>
               )}
-            </h1>
-            {state.selectedAgent?.name && (
-              <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 truncate">
-                Agent: {state.selectedAgent.name}
-              </p>
-            )}
+            </div>
           </div>
 
           <div className="flex space-x-2 ml-2">
@@ -284,6 +347,15 @@ export default function SessionPage() {
           />
         </div>
       </div>
+      
+      {/* Agent Modal */}
+      {showAgentModal && state.selectedAgent && (
+        <AgentModal
+          initialAgent={state.selectedAgent}
+          onSubmit={handleAgentUpdate}
+          onClose={() => setShowAgentModal(false)}
+        />
+      )}
     </div>
   );
 } 
