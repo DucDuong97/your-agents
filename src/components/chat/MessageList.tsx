@@ -95,6 +95,7 @@ export default function MessageList({ messages, isGenerating = false }: MessageL
           <div className="prose dark:prose-invert max-w-none text-sm sm:text-base leading-relaxed">
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
+              urlTransform={(value: string) => value}
               components={{
                 code: ({ className, children }) => {
                   const match = /language-(\w+)/.exec(className || '');
@@ -111,6 +112,14 @@ export default function MessageList({ messages, isGenerating = false }: MessageL
                       {children}
                     </code>
                   );
+                },
+                img: ({ src, alt, ...props }) => {
+                  console.log(props);
+                  // Handle empty src attributes
+                  if (!src || src === '') {
+                    return null;
+                  }
+                  return <img style={{maxWidth: 160}} src={src} alt={alt || 'Image'} className="max-w-full rounded-lg my-2" {...props} />;
                 },
                 a: (props) => (
                   <a className="text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300 break-words" {...props} />
@@ -171,13 +180,13 @@ export default function MessageList({ messages, isGenerating = false }: MessageL
             box-shadow: 9984px 0 0 0 #6b7280, 9999px 0 0 0 #6b7280, 10014px 0 0 0 #6b7280;
           }
           50% {
-            box-shadow: 9984px 0 0 0 #6b7280, 9999px -8px 0 0 #6b7280, 10014px 0 0 0 #6b7280;
+            box-shadow: 9984px 0 0 0 #6b7280, 9999px -8px 0 0 0 #6b7280, 10014px 0 0 0 #6b7280;
           }
           66.667% {
             box-shadow: 9984px 0 0 0 #6b7280, 9999px 0 0 0 #6b7280, 10014px 0 0 0 #6b7280;
           }
           83.333% {
-            box-shadow: 9984px 0 0 0 #6b7280, 9999px 0 0 0 #6b7280, 10014px -8px 0 0 #6b7280;
+            box-shadow: 9984px 0 0 0 #6b7280, 9999px 0 0 0 #6b7280, 10014px -8px 0 0 0 #6b7280;
           }
           100% {
             box-shadow: 9984px 0 0 0 #6b7280, 9999px 0 0 0 #6b7280, 10014px 0 0 0 #6b7280;

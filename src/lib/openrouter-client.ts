@@ -16,10 +16,19 @@ export interface ModelInfo {
   knowledgeCutoff?: string;
 }
 
-// Simple message format for API calls
+// Content item for structured messages (text, images, etc.)
+export interface ContentItem {
+  type: 'text' | 'image_url';
+  text?: string;
+  image_url?: {
+    url: string;
+  };
+}
+
+// Message format for API calls
 export interface ApiMessage {
   role: 'user' | 'assistant' | 'system';
-  content: string;
+  content: string | ContentItem[];
 }
 
 export interface ChatCompletionOptions {

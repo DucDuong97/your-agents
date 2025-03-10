@@ -13,6 +13,7 @@ import { getGlobalConfig } from '@/lib/storage';
 import { generateChatTitle } from '@/lib/promptUtils';
 import { ArrowLeft, Home, Edit } from 'lucide-react';
 import AgentModal from '@/components/chat/AgentModal';
+import { getModels } from '@/lib/modelUtils';
 
 interface ChatState {
   messages: Message[];
@@ -35,7 +36,7 @@ export default function SessionPage() {
     isTitleGenerating: false,
   });
   
-  const { register, handleSubmit, reset } = useForm<{ message: string }>();
+  const { register, handleSubmit, reset, setValue } = useForm<{ message: string; image?: File }>();
   const [loading, setLoading] = useState(true);
   const [showAgentModal, setShowAgentModal] = useState(false);
   
@@ -73,8 +74,8 @@ export default function SessionPage() {
     loadChatData();
   }, [sessionId, router]);
   
-  const onSendMessage = async (data: { message: string }) => {
-    if (!data.message.trim() || state.isGenerating) return;
+  const onSendMessage = async (data: { message: string; image?: File }) => {
+    if ((!data.message.trim() && !data.image) || state.isGenerating) return;
     
     // Check if agent is selected
     if (!state.selectedAgent || !state.currentChat) {
@@ -93,11 +94,44 @@ export default function SessionPage() {
       return;
     }
     
+    let messageContent = data.message;
+    let contentForDisplay = data.message;
+    
+    // If there's an image, convert it to base64 and prepare it for display and API
+    if (data.image) {
+      try {
+        const base64Image = await convertImageToBase64(data.image);
+        
+        // For display in the UI, we'll use markdown format
+        contentForDisplay = `${data.message}\n\n![Uploaded Image](${base64Image})`;
+        
+        // For the API, we'll store the structured content format in a special field
+        // This will be processed when sending to the API
+        messageContent = JSON.stringify([
+          {
+            "type": "text",
+            "text": data.message
+          },
+          {
+            "type": "image_url",
+            "image_url": {
+              "url": `data:${data.image.type};base64,${base64Image.split(',')[1]}`
+            }
+          }
+        ]);
+      } catch (error) {
+        console.error('Error processing image:', error);
+        alert('Failed to process the image. Please try again.');
+        return;
+      }
+    }
+    
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
-      content: data.message,
+      content: contentForDisplay, // Use the display-friendly content for UI
       createdAt: new Date().toISOString(),
+      rawContent: data.image ? messageContent : undefined // Store structured content if there's an image
     };
     
     // Add message to current chat
@@ -148,8 +182,24 @@ export default function SessionPage() {
       // Convert messages to API format
       const apiMessages: ApiMessage[] = [
         { role: 'system', content: state.selectedAgent.systemPrompt },
-        ...updatedMessages.map(msg => ({ role: msg.role, content: msg.content })),
       ];
+      
+      // Add user and assistant messages with proper format
+      for (const msg of updatedMessages) {
+        if (msg.rawContent && msg.role === 'user') {
+          // If the message has structured content (for images), use it
+          apiMessages.push({
+            role: msg.role,
+            content: JSON.parse(msg.rawContent)
+          });
+        } else {
+          // Otherwise use the regular content
+          apiMessages.push({
+            role: msg.role,
+            content: msg.content
+          });
+        }
+      }
       
       const response = await generateChatCompletion({
         messages: apiMessages,
@@ -200,6 +250,34 @@ export default function SessionPage() {
         messages: finalMessages,
       });
     }
+  };
+  
+  // Helper function to convert an image file to base64
+  const convertImageToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          resolve(reader.result);
+        } else {
+          reject(new Error('Failed to convert image to base64'));
+        }
+      };
+      reader.onerror = () => {
+        reject(new Error('Failed to read image file'));
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+  
+  // Check if the selected model supports images
+  const supportsImages = (): boolean => {
+    if (!state.selectedAgent) return false;
+    
+    const models = getModels(state.selectedAgent.provider);
+    const selectedModel = models.find(model => model.id === state.selectedAgent?.modelName);
+    
+    return selectedModel?.inputModalities?.includes('images') || false;
   };
   
   const handleClearChat = () => {
@@ -343,7 +421,9 @@ export default function SessionPage() {
           <MessageInput 
             onSubmit={handleSubmit(onSendMessage)}
             register={register}
+            setValue={setValue}
             isSubmitting={state.isGenerating}
+            supportsImages={supportsImages()}
           />
         </div>
       </div>

@@ -6,6 +6,7 @@ export interface Message {
   role: 'user' | 'assistant' | 'system';
   content: string;
   createdAt: string;
+  rawContent?: string; // For storing structured content (like image data) in JSON format
 }
 
 export interface Chat {
