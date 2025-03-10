@@ -91,6 +91,39 @@ export default function MessageList({ messages, isGenerating = false }: MessageL
             <span className="text-[10px] sm:text-xs text-gray-500">
               {new Date(message.createdAt).toLocaleTimeString()}
             </span>
+            {message.role === 'assistant' && message.price && (
+              <div className="relative group ml-auto">
+                <span className="text-[10px] sm:text-xs text-gray-500 cursor-help">
+                  ${message.price.totalCost?.toFixed(6)} USD
+                </span>
+                <div className="absolute right-0 mt-1 w-60 bg-gray-800 text-white text-xs rounded py-2 px-3 z-10 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none">
+                  <div className="font-semibold mb-1">Price Breakdown:</div>
+                  <div className="grid grid-cols-2 gap-1">
+                    <span>Prompt Tokens:</span>
+                    <span className="text-right">{message.price.promptTokens?.toLocaleString()}</span>
+                    <span>Prompt Cost:</span>
+                    <span className="text-right">${message.price.promptCost?.toFixed(6)}</span>
+                    
+                    <span>Output Tokens:</span>
+                    <span className="text-right">{message.price.completionTokens?.toLocaleString()}</span>
+                    <span>Output Cost:</span>
+                    <span className="text-right">${message.price.completionCost?.toFixed(6)}</span>
+                    
+                    {message.price.imageCount ? (
+                      <>
+                        <span>Images:</span>
+                        <span className="text-right">{message.price.imageCount}</span>
+                        <span>Image Cost:</span>
+                        <span className="text-right">${message.price.imageCost?.toFixed(6)}</span>
+                      </>
+                    ) : null}
+                    <span className="border-t border-gray-600 col-span-2 mt-1 pt-1"></span>
+                    <span className="font-semibold">Total Cost:</span>
+                    <span className="text-right font-semibold">${message.price.totalCost?.toFixed(6)}</span>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
           <div className="prose dark:prose-invert max-w-none text-sm sm:text-base leading-relaxed">
             <ReactMarkdown
@@ -114,7 +147,6 @@ export default function MessageList({ messages, isGenerating = false }: MessageL
                   );
                 },
                 img: ({ src, alt, ...props }) => {
-                  console.log(props);
                   // Handle empty src attributes
                   if (!src || src === '') {
                     return null;

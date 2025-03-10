@@ -40,12 +40,32 @@ export interface ChatCompletionOptions {
 
 export interface ChatCompletionResponse {
   content: string;
+  usage?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  };
 }
 
 // Client-side function to generate chat completion
 export async function generateChatCompletion(options: ChatCompletionOptions): Promise<ChatCompletionResponse> {
   try {
     const { messages, model, apiKey, provider } = options;
+
+    // Check if the model is an Anthropic Claude model or other models that use max_completion_tokens
+    const usesMaxCompletionTokens = 
+      model.includes('claude') || 
+      model.includes('o3-') ||
+      model.includes('o1-');
+    
+    // Prepare the request body based on the model type
+    const requestBody = {
+      model: model,
+      messages: messages,
+      ...(usesMaxCompletionTokens 
+        ? { max_completion_tokens: 1000 } 
+        : { temperature: 0.7,max_tokens: 1000 })
+    };
 
     if (provider === 'openrouter') {
       // Call OpenRouter API
@@ -57,12 +77,7 @@ export async function generateChatCompletion(options: ChatCompletionOptions): Pr
           'HTTP-Referer': window.location.origin,
           'X-Title': 'Next.js Chat Bot',
         },
-        body: JSON.stringify({
-          model: model,
-          messages: messages,
-          temperature: 0.7,
-          max_tokens: 1000,
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       if (!response.ok) {
@@ -71,7 +86,10 @@ export async function generateChatCompletion(options: ChatCompletionOptions): Pr
       }
 
       const data = await response.json();
-      return { content: data.choices[0]?.message?.content || 'No response generated' };
+      return { 
+        content: data.choices[0]?.message?.content || 'No response generated',
+        usage: data.usage
+      };
     } else {
       // Call OpenAI API
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -80,12 +98,7 @@ export async function generateChatCompletion(options: ChatCompletionOptions): Pr
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${apiKey}`,
         },
-        body: JSON.stringify({
-          model: model,
-          messages: messages,
-          temperature: 0.7,
-          max_tokens: 1000,
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       if (!response.ok) {
@@ -94,7 +107,10 @@ export async function generateChatCompletion(options: ChatCompletionOptions): Pr
       }
 
       const data = await response.json();
-      return { content: data.choices[0]?.message?.content || 'No response generated' };
+      return { 
+        content: data.choices[0]?.message?.content || 'No response generated',
+        usage: data.usage
+      };
     }
   } catch (error) {
     console.error('Error generating chat completion:', error);

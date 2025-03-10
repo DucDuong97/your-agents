@@ -190,6 +190,36 @@
       "inputModalities": ["text", "images"],
       "outputModalities": ["text"],
       "knowledgeCutoff": "October 2023"
+    },
+    {
+      "id": "o1-mini",
+      "name": "o1-mini",
+      "provider": "openai",
+      "contextLength": 128000,
+      "pricing": {
+        "prompt": 1.1,
+        "completion": 4.4
+      },
+      "description": "Compact version of the o1 model with efficient performance",
+      "speed": "Medium",
+      "inputModalities": ["text"],
+      "outputModalities": ["text"],
+      "knowledgeCutoff": "October 2023"
+    },
+    {
+      "id": "o3-mini",
+      "name": "o3-mini",
+      "provider": "openai",
+      "contextLength": 200000,
+      "pricing": {
+        "prompt": 1.1,
+        "completion": 4.4
+      },
+      "description": "Compact version of the o3 model with balanced capabilities",
+      "speed": "Medium",
+      "inputModalities": ["text"],
+      "outputModalities": ["text"],
+      "knowledgeCutoff": "October 2023"
     }
   ]
 } 

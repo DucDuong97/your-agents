@@ -7,6 +7,15 @@ export interface Message {
   content: string;
   createdAt: string;
   rawContent?: string; // For storing structured content (like image data) in JSON format
+  price?: {
+    promptTokens?: number;
+    completionTokens?: number;
+    imageCount?: number;
+    totalCost?: number;
+    promptCost?: number;
+    completionCost?: number;
+    imageCost?: number;
+  };
 }
 
 export interface Chat {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Chat, chatDB } from '@/lib/db';
+import { Chat, chatDB, Message } from '@/lib/db';
 import { format } from 'date-fns';
 
 interface ChatSessionListProps {
@@ -7,6 +7,44 @@ interface ChatSessionListProps {
   onSelectChat: (chat: Chat) => void;
   onNewChat: () => void;
 }
+
+// Helper function to calculate total cost of a chat session
+const calculateTotalCost = (messages: Message[]): number => {
+  return messages
+    .filter(message => message.role === 'assistant' && message.price?.totalCost)
+    .reduce((total, message) => total + (message.price?.totalCost || 0), 0);
+};
+
+// Helper function to count AI messages
+const countAIMessages = (messages: Message[]): number => {
+  return messages.filter(message => message.role === 'assistant').length;
+};
+
+// Helper function to count tokens
+const countTokens = (messages: Message[]): { promptTokens: number, completionTokens: number } => {
+  return messages
+    .filter(message => message.role === 'assistant' && message.price)
+    .reduce(
+      (total, message) => ({
+        promptTokens: total.promptTokens + (message.price?.promptTokens || 0),
+        completionTokens: total.completionTokens + (message.price?.completionTokens || 0),
+      }),
+      { promptTokens: 0, completionTokens: 0 }
+    );
+};
+
+// Helper function to get cost badge color based on cost amount
+const getCostBadgeColor = (cost: number): string => {
+  if (cost >= 0.1) {
+    return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300";
+  } else if (cost >= 0.05) {
+    return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300";
+  } else if (cost >= 0.01) {
+    return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300";
+  } else {
+    return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300";
+  }
+};
 
 export default function ChatSessionList({ agentId, onSelectChat, onNewChat }: ChatSessionListProps) {
   const [chats, setChats] = useState<Chat[]>([]);
@@ -42,16 +80,31 @@ export default function ChatSessionList({ agentId, onSelectChat, onNewChat }: Ch
     }
   };
 
+  // Calculate total cost across all sessions
+  const totalCostAllSessions = chats.reduce(
+    (total, chat) => total + calculateTotalCost(chat.messages),
+    0
+  );
+
   return (
     <div className="p-4 bg-white dark:bg-gray-800 rounded-lg shadow">
       <div className="flex justify-between items-center mb-4">
-        <h2 className="text-xl font-bold text-gray-900 dark:text-white">Chat Sessions</h2>
-        <button
-          onClick={onNewChat}
-          className="px-3 py-1 text-sm bg-blue-500 hover:bg-blue-600 text-white rounded"
-        >
-          New Chat
-        </button>
+        <div>
+          <h2 className="text-xl font-bold text-gray-900 dark:text-white">Chat Sessions</h2>
+          {totalCostAllSessions > 0 && (
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              Total spent: <span className="font-medium">${totalCostAllSessions.toFixed(6)} USD</span>
+            </p>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onNewChat}
+            className="px-3 py-1 text-sm bg-blue-500 hover:bg-blue-600 text-white rounded"
+          >
+            New Chat
+          </button>
+        </div>
       </div>
 
       {loading ? (
@@ -74,9 +127,32 @@ export default function ChatSessionList({ agentId, onSelectChat, onNewChat }: Ch
               <div className="flex justify-between items-start">
                 <div className="flex-1">
                   <h3 className="font-medium text-gray-900 dark:text-white">{chat.title}</h3>
-                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                    {format(new Date(chat.updatedAt), 'MMM d, yyyy h:mm a')}
-                  </p>
+                  <div className="flex justify-start items-center gap-4">
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                      {format(new Date(chat.updatedAt), 'MMM d, yyyy h:mm a')}
+                    </p>
+                    {calculateTotalCost(chat.messages) > 0 && (
+                      <div className="relative group">
+                        <span className={`text-xs ${getCostBadgeColor(calculateTotalCost(chat.messages))} px-2 py-0.5 rounded-full`}>
+                          ${calculateTotalCost(chat.messages).toFixed(6)}
+                        </span>
+                        <div className="absolute right-0 mt-1 w-60 bg-gray-800 text-white text-xs rounded py-2 px-3 z-10 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none">
+                          <div className="font-semibold mb-1">Session Cost Breakdown:</div>
+                          <div className="grid grid-cols-2 gap-1">
+                            <span>AI Messages:</span>
+                            <span className="text-right">{countAIMessages(chat.messages)}</span>
+                            <span>Prompt Tokens:</span>
+                            <span className="text-right">{countTokens(chat.messages).promptTokens.toLocaleString()}</span>
+                            <span>Completion Tokens:</span>
+                            <span className="text-right">{countTokens(chat.messages).completionTokens.toLocaleString()}</span>
+                            <span className="border-t border-gray-600 col-span-2 mt-1 pt-1"></span>
+                            <span className="font-semibold">Total Cost:</span>
+                            <span className="text-right font-semibold">${calculateTotalCost(chat.messages).toFixed(6)} USD</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                   {chat.messages.length > 0 && (
                     <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">
                       {chat.messages[chat.messages.length - 1].content}

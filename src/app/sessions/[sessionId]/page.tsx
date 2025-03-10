@@ -13,7 +13,7 @@ import { getGlobalConfig } from '@/lib/storage';
 import { generateChatTitle } from '@/lib/promptUtils';
 import { ArrowLeft, Home, Edit } from 'lucide-react';
 import AgentModal from '@/components/chat/AgentModal';
-import { getModels } from '@/lib/modelUtils';
+import { getModels, getModelById } from '@/lib/modelUtils';
 
 interface ChatState {
   messages: Message[];
@@ -208,11 +208,60 @@ export default function SessionPage() {
         provider: state.selectedAgent.provider,
       });
       
+      // Calculate price based on token usage and model pricing
+      const modelInfo = getModelById(state.selectedAgent.modelName);
+      const pricing = modelInfo?.pricing || { prompt: 0, completion: 0, image: 0 };
+      
+      // Use actual token counts from API response if available, otherwise estimate
+      let promptTokens, completionTokens;
+      
+      if (response.usage) {
+        // Use actual token counts from API
+        promptTokens = response.usage.prompt_tokens;
+        completionTokens = response.usage.completion_tokens;
+      } else {
+        // Estimate token count (rough approximation)
+        const promptText = apiMessages.map(msg => 
+          typeof msg.content === 'string' ? msg.content : 
+          Array.isArray(msg.content) ? 
+            msg.content.filter(item => item.type === 'text').map(item => item.text).join(' ') : 
+            ''
+        ).join(' ');
+        const completionText = response.content;
+        
+        // Rough estimate: ~4 chars per token
+        promptTokens = Math.ceil(promptText.length / 4);
+        completionTokens = Math.ceil(completionText.length / 4);
+      }
+      
+      // Count images in the conversation
+      const imageCount = apiMessages.reduce((count, msg) => {
+        if (Array.isArray(msg.content)) {
+          return count + msg.content.filter(item => item.type === 'image_url').length;
+        }
+        return count;
+      }, 0);
+      
+      // Calculate total cost in USD (convert from price per million tokens)
+      const promptCost = (promptTokens / 1000000) * (pricing.prompt || 0);
+      const completionCost = (completionTokens / 1000000) * (pricing.completion || 0);
+      const imageCost = imageCount * (pricing.image || 0);
+      const totalCost = promptCost + completionCost + imageCost;
+      
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
         content: response.content,
         createdAt: new Date().toISOString(),
+        price: {
+          promptTokens,
+          completionTokens,
+          imageCount,
+          totalCost,
+          promptCost,
+          completionCost,
+          imageCost
+        }
       };
       
       const finalMessages = [...updatedMessages, assistantMessage];
@@ -371,7 +420,7 @@ export default function SessionPage() {
               </h1>
               {state.selectedAgent?.name && (
                 <div className="flex items-center text-xs sm:text-sm text-gray-500 dark:text-gray-400">
-                  <span className="truncate mr-1">Agent: {state.selectedAgent.name}</span>
+                  <span className="truncate mr-1">{state.selectedAgent.name}</span>
                   {state.selectedAgent && (
                     <button
                       onClick={handleEditAgent}
