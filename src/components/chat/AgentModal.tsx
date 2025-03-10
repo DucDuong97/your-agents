@@ -4,6 +4,7 @@ import { ChatAgent } from '@/lib/db';
 import { getModels } from '@/lib/modelUtils';
 import { generateExamplePrompts, generateExamplePromptsSync } from '@/lib/promptUtils';
 import ModelSelect from './ModelSelect';
+import SystemPromptEditor from './SystemPromptEditor';
 
 interface AgentModalProps {
   initialAgent?: Omit<ChatAgent, 'id' | 'createdAt' | 'updatedAt'> | ChatAgent;
@@ -13,6 +14,7 @@ interface AgentModalProps {
 
 export default function AgentModal({ initialAgent, onSubmit, onClose }: AgentModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showSystemPromptEditor, setShowSystemPromptEditor] = useState(false);
 
   const { register, handleSubmit, setValue, watch } = useForm<Omit<ChatAgent, 'id' | 'createdAt' | 'updatedAt'>>({
     defaultValues: initialAgent ? {
@@ -32,6 +34,7 @@ export default function AgentModal({ initialAgent, onSubmit, onClose }: AgentMod
 
   const currentProvider = watch('provider') as 'openrouter' | 'openai';
   const currentModelName = watch('modelName');
+  const currentSystemPrompt = watch('systemPrompt');
   
   // Get models for the current provider
   const models = getModels(currentProvider);
@@ -82,6 +85,11 @@ export default function AgentModal({ initialAgent, onSubmit, onClose }: AgentMod
   // Handle model change from the custom select
   const handleModelChange = (modelId: string) => {
     setValue('modelName', modelId);
+  };
+
+  // Handle system prompt change from the editor
+  const handleSystemPromptChange = (newPrompt: string) => {
+    setValue('systemPrompt', newPrompt);
   };
 
   return (
@@ -137,13 +145,22 @@ export default function AgentModal({ initialAgent, onSubmit, onClose }: AgentMod
             </div>
 
             <div className="mb-6">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                System Prompt
-              </label>
+              <div className="flex justify-between items-center mb-1">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  System Prompt
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setShowSystemPromptEditor(true)}
+                  className="text-sm text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
+                >
+                  Open in Editor
+                </button>
+              </div>
               <textarea
                 {...register('systemPrompt', { required: true })}
-                className="text-sm w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
-                rows={15}
+                className="text-sm w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white font-mono"
+                rows={8}
                 placeholder="You are a helpful assistant."
               />
               <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
@@ -170,6 +187,15 @@ export default function AgentModal({ initialAgent, onSubmit, onClose }: AgentMod
           </form>
         </div>
       </div>
+
+      {/* System Prompt Editor Modal */}
+      {showSystemPromptEditor && (
+        <SystemPromptEditor
+          value={currentSystemPrompt}
+          onChange={handleSystemPromptChange}
+          onClose={() => setShowSystemPromptEditor(false)}
+        />
+      )}
     </div>
   );
 } 
