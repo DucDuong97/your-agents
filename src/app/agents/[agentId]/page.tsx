@@ -1,8 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { useParams } from 'next/navigation';
+import { useRouter, useParams } from 'next/navigation';
 import ChatSessionList from '@/components/chat/ChatSessionList';
 import { agentDB, Chat, ChatAgent, chatDB } from '@/lib/db';
 import AgentModal from '@/components/chat/AgentModal';
@@ -63,6 +62,7 @@ export default function AgentPage() {
           modelName: updatedAgent.modelName,
           provider: updatedAgent.provider,
           examplePrompts: updatedAgent.examplePrompts,
+          oneShotExample: updatedAgent.oneShotExample,
         });
         
         // Update both the selectedAgent state and the agentName

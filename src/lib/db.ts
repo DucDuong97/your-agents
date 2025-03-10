@@ -34,6 +34,7 @@ export interface ChatAgent {
   modelName: string;
   provider: 'openrouter' | 'openai';
   examplePrompts: string[];
+  oneShotExample?: string; // Optional one-shot example for prompt engineering
   createdAt: string;
   updatedAt: string;
 }

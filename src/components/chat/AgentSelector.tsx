@@ -73,7 +73,8 @@ export default function AgentSelector({ onSelectAgent }: AgentSelectorProps) {
       systemPrompt: agent.systemPrompt,
       modelName: agent.modelName,
       provider: agent.provider,
-      examplePrompts: agent.examplePrompts
+      examplePrompts: agent.examplePrompts,
+      oneShotExample: agent.oneShotExample || ''
     };
     
     // Convert to JSON string with pretty formatting

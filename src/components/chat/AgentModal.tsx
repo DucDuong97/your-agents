@@ -15,6 +15,7 @@ interface AgentModalProps {
 export default function AgentModal({ initialAgent, onSubmit, onClose }: AgentModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSystemPromptEditor, setShowSystemPromptEditor] = useState(false);
+  const [oneShotEnabled, setOneShotEnabled] = useState(!!initialAgent?.oneShotExample);
 
   const { register, handleSubmit, setValue, watch } = useForm<Omit<ChatAgent, 'id' | 'createdAt' | 'updatedAt'>>({
     defaultValues: initialAgent ? {
@@ -23,12 +24,14 @@ export default function AgentModal({ initialAgent, onSubmit, onClose }: AgentMod
       modelName: initialAgent.modelName,
       provider: initialAgent.provider,
       examplePrompts: initialAgent.examplePrompts || [],
+      oneShotExample: initialAgent.oneShotExample || '',
     } : {
       name: '',
       systemPrompt: 'You are a helpful assistant.',
       modelName: 'openai/gpt-3.5-turbo',
       provider: 'openrouter',
       examplePrompts: [],
+      oneShotExample: '',
     },
   });
 
@@ -91,6 +94,34 @@ export default function AgentModal({ initialAgent, onSubmit, onClose }: AgentMod
   const handleSystemPromptChange = (newPrompt: string) => {
     setValue('systemPrompt', newPrompt);
   };
+
+  // Handle one-shot example toggle
+  const handleOneShotToggle = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setOneShotEnabled(e.target.checked);
+    if (!e.target.checked) {
+      setValue('oneShotExample', '');
+    }
+  };
+
+  // Combine input and output examples into the one-shot example format
+  const handleExampleChange = (input: string, output: string) => {
+    const formattedExample = `# Example\nUser: ${input}\nAssistant: ${output}`;
+    setValue('oneShotExample', formattedExample);
+  };
+
+  // Extract input and output from one-shot example
+  const extractExampleParts = () => {
+    const example = watch('oneShotExample') || '';
+    const userMatch = example.match(/User:\s*([\s\S]*?)(?=\nAssistant:|$)/);
+    const assistantMatch = example.match(/Assistant:\s*([\s\S]*?)$/);
+    
+    return {
+      input: userMatch ? userMatch[1].trim() : '',
+      output: assistantMatch ? assistantMatch[1].trim() : ''
+    };
+  };
+
+  const { input: exampleInput, output: exampleOutput } = extractExampleParts();
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -166,6 +197,55 @@ export default function AgentModal({ initialAgent, onSubmit, onClose }: AgentMod
               <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                 This prompt defines the agent&apos;s personality and capabilities.
               </p>
+            </div>
+            
+            <div className="mb-6">
+              <div className="flex items-center mb-2">
+                <input
+                  type="checkbox"
+                  id="oneShotToggle"
+                  checked={oneShotEnabled}
+                  onChange={handleOneShotToggle}
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                />
+                <label htmlFor="oneShotToggle" className="ml-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Enable One-Shot Prompting
+                </label>
+              </div>
+              
+              {oneShotEnabled && (
+                <div className="mt-3 space-y-4 p-4 border border-gray-200 dark:border-gray-700 rounded-md bg-gray-50 dark:bg-gray-800">
+                  <p className="text-xs text-gray-600 dark:text-gray-400">
+                    One-shot prompting provides an example conversation to guide the model&apos;s responses.
+                  </p>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Example User Input
+                    </label>
+                    <textarea
+                      value={exampleInput}
+                      onChange={(e) => handleExampleChange(e.target.value, exampleOutput)}
+                      className="text-sm w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white font-mono"
+                      rows={3}
+                      placeholder="Enter an example user message"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Example Assistant Response
+                    </label>
+                    <textarea
+                      value={exampleOutput}
+                      onChange={(e) => handleExampleChange(exampleInput, e.target.value)}
+                      className="text-sm w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white font-mono"
+                      rows={4}
+                      placeholder="Enter an example assistant response"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
             
             <div className="flex justify-end space-x-3">

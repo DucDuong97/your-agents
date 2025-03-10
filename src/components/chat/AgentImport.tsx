@@ -56,7 +56,8 @@ export default function AgentImport({ onClose, onImportSuccess }: AgentImportPro
             systemPrompt: agentData.systemPrompt,
             modelName: agentData.modelName,
             provider: agentData.provider as 'openrouter' | 'openai',
-            examplePrompts
+            examplePrompts,
+            oneShotExample: agentData.oneShotExample || ''
           });
           
           importedCount++;
