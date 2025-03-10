@@ -1,10 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { ChatAgent } from '@/lib/db';
-import { getOpenRouterModels, getOpenAIModels, ModelInfo } from '@/lib/openrouter-client';
-import { getGlobalConfig } from '@/lib/storage';
+import { getModels } from '@/lib/modelUtils';
 import { generateExamplePrompts, generateExamplePromptsSync } from '@/lib/promptUtils';
-
+import ModelSelect from './ModelSelect';
 
 interface AgentModalProps {
   initialAgent?: Omit<ChatAgent, 'id' | 'createdAt' | 'updatedAt'> | ChatAgent;
@@ -13,10 +12,6 @@ interface AgentModalProps {
 }
 
 export default function AgentModal({ initialAgent, onSubmit, onClose }: AgentModalProps) {
-  const [models, setModels] = useState<ModelInfo[]>([]);
-  const [selectedProvider, setSelectedProvider] = useState<'openrouter' | 'openai'>(
-    initialAgent?.provider || 'openrouter'
-  );
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const { register, handleSubmit, setValue, watch } = useForm<Omit<ChatAgent, 'id' | 'createdAt' | 'updatedAt'>>({
@@ -29,40 +24,24 @@ export default function AgentModal({ initialAgent, onSubmit, onClose }: AgentMod
     } : {
       name: '',
       systemPrompt: 'You are a helpful assistant.',
-      modelName: selectedProvider === 'openrouter' ? 'openai/gpt-3.5-turbo' : 'gpt-3.5-turbo',
+      modelName: 'openai/gpt-3.5-turbo',
       provider: 'openrouter',
       examplePrompts: [],
     },
   });
 
-  const watchProvider = watch('provider');
+  const currentProvider = watch('provider') as 'openrouter' | 'openai';
+  const currentModelName = watch('modelName');
+  
+  // Get models for the current provider
+  const models = getModels(currentProvider);
 
-  useEffect(() => {
-    // Load available models
-    const loadModels = async () => {
-      try {
-        const config = getGlobalConfig();
-
-        setSelectedProvider(watchProvider as 'openrouter' | 'openai');
-          
-        // Set default model for the selected provider
-        if (watchProvider === 'openrouter') {
-          setValue('modelName', 'openai/gpt-3.5-turbo');
-          const orModels = await getOpenRouterModels(config.openrouterApiKey);
-          setModels(orModels);
-        } else {
-          setValue('modelName', 'gpt-3.5-turbo');
-          const oaiModels = await getOpenAIModels(config.openaiApiKey);
-          setModels(oaiModels);
-        }
-      } catch (error) {
-        console.error('Failed to load models:', error);
-        // Fallback models will be provided by the API functions
-      }
-    };
-    
-    loadModels();
-  }, [watchProvider, selectedProvider, setValue]);
+  // Ensure the selected model is valid for the current provider
+  if (currentModelName && !models.some(model => model.id === currentModelName)) {
+    // Set a default model for the selected provider
+    const defaultModel = currentProvider === 'openrouter' ? 'openai/gpt-3.5-turbo' : 'gpt-3.5-turbo';
+    setValue('modelName', defaultModel);
+  }
 
   const handleFormSubmit = async (data: Omit<ChatAgent, 'id' | 'createdAt' | 'updatedAt'>) => {
     try {
@@ -98,6 +77,11 @@ export default function AgentModal({ initialAgent, onSubmit, onClose }: AgentMod
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  // Handle model change from the custom select
+  const handleModelChange = (modelId: string) => {
+    setValue('modelName', modelId);
   };
 
   return (
@@ -143,16 +127,11 @@ export default function AgentModal({ initialAgent, onSubmit, onClose }: AgentMod
                 </label>
                 
                 {models && models.length > 0 && (
-                  <select
-                    {...register('modelName')}
-                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
-                  >
-                    {models.map(model => (
-                      <option key={model.id} value={model.id}>
-                        {model.name}
-                      </option>
-                    ))}
-                  </select>
+                  <ModelSelect
+                    models={models}
+                    value={currentModelName}
+                    onChange={handleModelChange}
+                  />
                 )}
               </div>
             </div>

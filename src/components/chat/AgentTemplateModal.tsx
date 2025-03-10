@@ -1,5 +1,5 @@
 import React from 'react';
-import agentTemplates from '@/app/assets/agentTemplates.json';
+import agentTemplates from '@/assets/agentTemplates.json';
 import { ChatAgent } from '@/lib/db';
 
 interface AgentTemplateModalProps {

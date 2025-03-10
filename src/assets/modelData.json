@@ -1,0 +1,195 @@
+{
+  "openrouter": [
+    {
+      "id": "anthropic/claude-3-haiku",
+      "name": "Claude 3 Haiku",
+      "provider": "openrouter",
+      "contextLength": 200000,
+      "pricing": {
+        "prompt": 1.5,
+        "completion": 5,
+        "image": 0.5
+      },
+      "description": "Fastest and most compact model in the Claude 3 family",
+      "speed": "Very Fast",
+      "inputModalities": ["text", "images"],
+      "outputModalities": ["text"],
+      "knowledgeCutoff": "April 2023"
+    },
+    {
+      "id": "anthropic/claude-3-opus",
+      "name": "Claude 3 Opus",
+      "provider": "openrouter",
+      "contextLength": 200000,
+      "pricing": {
+        "prompt": 15,
+        "completion": 75,
+        "image": 1.5
+      },
+      "description": "Most powerful model in the Claude 3 family",
+      "speed": "Slow",
+      "inputModalities": ["text", "images"],
+      "outputModalities": ["text"],
+      "knowledgeCutoff": "April 2023"
+    },
+    {
+      "id": "anthropic/claude-3-sonnet",
+      "name": "Claude 3 Sonnet",
+      "provider": "openrouter",
+      "contextLength": 200000,
+      "pricing": {
+        "prompt": 3,
+        "completion": 15,
+        "image": 1.0
+      },
+      "description": "Balanced model in the Claude 3 family",
+      "speed": "Medium",
+      "inputModalities": ["text", "images"],
+      "outputModalities": ["text"],
+      "knowledgeCutoff": "April 2023"
+    },
+    {
+      "id": "google/gemini-pro",
+      "name": "Gemini Pro",
+      "provider": "openrouter",
+      "contextLength": 32000,
+      "pricing": {
+        "prompt": 0.125,
+        "completion": 0.375,
+        "image": 0.25
+      },
+      "description": "Google's multimodal model",
+      "speed": "Fast",
+      "inputModalities": ["text", "images"],
+      "outputModalities": ["text"],
+      "knowledgeCutoff": "February 2023"
+    },
+    {
+      "id": "openai/gpt-3.5-turbo",
+      "name": "GPT-3.5 Turbo",
+      "provider": "openrouter",
+      "contextLength": 16000,
+      "pricing": {
+        "prompt": 0.5,
+        "completion": 1.5
+      },
+      "description": "Fast and efficient model for most tasks",
+      "speed": "Very Fast",
+      "inputModalities": ["text"],
+      "outputModalities": ["text"],
+      "knowledgeCutoff": "January 2022"
+    },
+    {
+      "id": "openai/gpt-4-turbo",
+      "name": "GPT-4 Turbo",
+      "provider": "openrouter",
+      "contextLength": 128000,
+      "pricing": {
+        "prompt": 10,
+        "completion": 30,
+        "image": 1.0
+      },
+      "description": "Powerful model with large context window",
+      "speed": "Medium",
+      "inputModalities": ["text", "images"],
+      "outputModalities": ["text"],
+      "knowledgeCutoff": "April 2023"
+    },
+    {
+      "id": "openai/gpt-4o",
+      "name": "GPT-4o",
+      "provider": "openrouter",
+      "contextLength": 128000,
+      "pricing": {
+        "prompt": 5,
+        "completion": 15,
+        "image": 0.8
+      },
+      "description": "Latest OpenAI model with improved capabilities",
+      "speed": "Fast",
+      "inputModalities": ["text", "images"],
+      "outputModalities": ["text"],
+      "knowledgeCutoff": "October 2023"
+    },
+    {
+      "id": "meta-llama/llama-3-70b-instruct",
+      "name": "Llama 3 70B",
+      "provider": "openrouter",
+      "contextLength": 8000,
+      "pricing": {
+        "prompt": 0.9,
+        "completion": 1.3
+      },
+      "description": "Meta's open-source large language model",
+      "speed": "Medium",
+      "inputModalities": ["text"],
+      "outputModalities": ["text"],
+      "knowledgeCutoff": "July 2023"
+    }
+  ],
+  "openai": [
+    {
+      "id": "gpt-3.5-turbo",
+      "name": "GPT-3.5 Turbo",
+      "provider": "openai",
+      "contextLength": 16000,
+      "pricing": {
+        "prompt": 0.5,
+        "completion": 1.5
+      },
+      "description": "Fast and efficient model for most tasks",
+      "speed": "Very Fast",
+      "inputModalities": ["text"],
+      "outputModalities": ["text"],
+      "knowledgeCutoff": "January 2022"
+    },
+    {
+      "id": "gpt-4",
+      "name": "GPT-4",
+      "provider": "openai",
+      "contextLength": 8000,
+      "pricing": {
+        "prompt": 30,
+        "completion": 60,
+        "image": 1.2
+      },
+      "description": "Powerful model with reasoning capabilities",
+      "speed": "Slow",
+      "inputModalities": ["text", "images"],
+      "outputModalities": ["text"],
+      "knowledgeCutoff": "September 2021"
+    },
+    {
+      "id": "gpt-4-turbo",
+      "name": "GPT-4 Turbo",
+      "provider": "openai",
+      "contextLength": 128000,
+      "pricing": {
+        "prompt": 10,
+        "completion": 30,
+        "image": 1.0
+      },
+      "description": "Powerful model with large context window",
+      "speed": "Medium",
+      "inputModalities": ["text", "images"],
+      "outputModalities": ["text"],
+      "knowledgeCutoff": "April 2023"
+    },
+    {
+      "id": "gpt-4o",
+      "name": "GPT-4o",
+      "provider": "openai",
+      "contextLength": 128000,
+      "pricing": {
+        "prompt": 5,
+        "completion": 15,
+        "image": 0.8
+      },
+      "description": "Latest OpenAI model with improved capabilities",
+      "speed": "Fast",
+      "inputModalities": ["text", "images"],
+      "outputModalities": ["text"],
+      "knowledgeCutoff": "October 2023"
+    }
+  ]
+} 
