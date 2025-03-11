@@ -5,8 +5,10 @@ import { useRouter } from 'next/navigation';
 import AgentSelector from '@/components/chat/AgentSelector';
 import { ChatAgent, agentDB } from '@/lib/db';
 import GlobalSettingsModal from '@/components/chat/GlobalSettingsModal';
-import { getGlobalConfig, saveGlobalConfig } from '@/lib/storage';
+import { getGlobalConfig, saveGlobalConfig, getUserActivity } from '@/lib/storage';
 import UserInfoModal from '@/components/UserInfoModal';
+import ActivityHeatmap from '@/components/ActivityHeatmap';
+import { GlobalConfig, UserActivity } from '@/lib/types';
 
 interface HomeState {
   showGlobalSettingsModal: boolean;
@@ -29,7 +31,24 @@ export default function HomePage() {
     }
   });
 
-  const [globalConfig, setGlobalConfig] = useState(getGlobalConfig());
+  // Initialize with empty values to avoid hydration mismatch
+  const [globalConfig, setGlobalConfig] = useState<GlobalConfig>({
+    openrouterApiKey: '',
+    openaiApiKey: '',
+    userNickname: '',
+    userJobTitle: ''
+  });
+  const [userActivity, setUserActivity] = useState<UserActivity>({
+    dailyMessageCounts: {},
+    currentStreak: 0,
+    longestStreak: 0
+  });
+  
+  // Load the config and activity data after component mounts
+  useEffect(() => {
+    setGlobalConfig(getGlobalConfig());
+    setUserActivity(getUserActivity());
+  }, []);
   
   const handleGlobalSettingsSubmit = (config: { openrouterApiKey: string; openaiApiKey: string }) => {
     const newConfig = { ...globalConfig, ...config };
@@ -85,6 +104,9 @@ export default function HomePage() {
     };
 
     checkUserInfo();
+
+    // Load latest user activity data
+    setUserActivity(getUserActivity());
   }, []);
   
   const handleSelectAgent = (agent: ChatAgent) => {
@@ -120,7 +142,6 @@ export default function HomePage() {
               AI Chat Assistant
             </h1>
             <p className="text-gray-600 dark:text-gray-400">
-              Select an agent to start chatting or create a new one
             </p>
           </div>
 
@@ -137,6 +158,18 @@ export default function HomePage() {
       
       <div className="flex-1 p-4 md:p-6">
         <div className="max-w-3xl mx-auto">
+          {globalConfig.userNickname && (
+            <div className="mb-6 p-6 bg-white dark:bg-gray-800 rounded-lg shadow-sm">
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+                Welcome back, {globalConfig.userNickname}!
+              </h2>
+            </div>
+          )}
+          
+          <div className="mb-6">
+            <ActivityHeatmap activity={userActivity} />
+          </div>
+          
           <AgentSelector 
             onSelectAgent={handleSelectAgent}
           />

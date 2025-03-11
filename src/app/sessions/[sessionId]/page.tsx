@@ -14,6 +14,7 @@ import { generateChatTitle } from '@/lib/promptUtils';
 import { ArrowLeft, Home, Edit } from 'lucide-react';
 import AgentModal from '@/components/chat/AgentModal';
 import { getModels, getModelById } from '@/lib/modelUtils';
+import { trackMessageSent } from '@/lib/storage';
 
 interface ChatState {
   messages: Message[];
@@ -125,6 +126,9 @@ export default function SessionPage() {
         return;
       }
     }
+    
+    // Track this message for streak counting
+    trackMessageSent();
     
     const userMessage: Message = {
       id: Date.now().toString(),
