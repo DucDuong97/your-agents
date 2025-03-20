@@ -76,12 +76,6 @@ const CodeBlock = ({ language, code }: { language: string; code: string }) => {
 };
 
 export default function MessageList({ messages, isGenerating, streamingContent }: MessageListProps) {
-  const calculateTokens = (price: NonNullable<Message['price']>) => {
-    const promptTokens = price.promptTokens || 0;
-    const completionTokens = price.completionTokens || 0;
-    return promptTokens + completionTokens;
-  };
-
   return (
     <div className="space-y-4 sm:space-y-6 px-2 sm:px-4 py-2">
       {messages.map((message) => (
