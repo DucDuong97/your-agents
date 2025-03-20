@@ -22,6 +22,7 @@ interface ChatState {
   currentChat: ChatType | null;
   isGenerating: boolean;
   isTitleGenerating: boolean;
+  streamingContent: string | null;
 }
 
 export default function SessionPage() {
@@ -35,6 +36,7 @@ export default function SessionPage() {
     currentChat: null,
     isGenerating: false,
     isTitleGenerating: false,
+    streamingContent: null,
   });
   
   const { register, handleSubmit, reset, setValue } = useForm<{ message: string; image?: File }>();
@@ -133,9 +135,9 @@ export default function SessionPage() {
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
-      content: contentForDisplay, // Use the display-friendly content for UI
+      content: contentForDisplay,
       createdAt: new Date().toISOString(),
-      rawContent: data.image ? messageContent : undefined // Store structured content if there's an image
+      rawContent: data.image ? messageContent : undefined
     };
     
     // Add message to current chat
@@ -145,6 +147,7 @@ export default function SessionPage() {
       ...prevState,
       messages: updatedMessages,
       isGenerating: true,
+      streamingContent: '',
     }));
     
     // Update the chat in the database
@@ -232,6 +235,12 @@ export default function SessionPage() {
         model: state.selectedAgent.modelName,
         apiKey,
         provider: state.selectedAgent.provider,
+        onUpdate: (content) => {
+          setState(prevState => ({
+            ...prevState,
+            streamingContent: content
+          }));
+        }
       });
       
       // Calculate price based on token usage and model pricing
@@ -296,6 +305,7 @@ export default function SessionPage() {
         ...prevState,
         messages: finalMessages,
         isGenerating: false,
+        streamingContent: null,
       }));
       
       // Update the chat in the database
@@ -318,6 +328,7 @@ export default function SessionPage() {
         ...prevState,
         messages: finalMessages,
         isGenerating: false,
+        streamingContent: null,
       }));
       
       // Update the chat in the database
@@ -492,8 +503,9 @@ export default function SessionPage() {
             />
           ) : (
             <MessageList 
-              messages={state.messages} 
+              messages={state.messages}
               isGenerating={state.isGenerating}
+              streamingContent={state.streamingContent}
             />
           )}
         </div>

@@ -1,17 +1,33 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Message } from '@/lib/db';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Highlight, themes } from 'prism-react-renderer';
+import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
+
+// Import commonly used languages
+import typescript from 'react-syntax-highlighter/dist/esm/languages/prism/typescript';
+import javascript from 'react-syntax-highlighter/dist/esm/languages/prism/javascript';
+import python from 'react-syntax-highlighter/dist/esm/languages/prism/python';
+import bash from 'react-syntax-highlighter/dist/esm/languages/prism/bash';
+import json from 'react-syntax-highlighter/dist/esm/languages/prism/json';
+
+// Register languages
+SyntaxHighlighter.registerLanguage('typescript', typescript);
+SyntaxHighlighter.registerLanguage('javascript', javascript);
+SyntaxHighlighter.registerLanguage('python', python);
+SyntaxHighlighter.registerLanguage('bash', bash);
+SyntaxHighlighter.registerLanguage('json', json);
 
 interface MessageListProps {
   messages: Message[];
-  isGenerating?: boolean;
+  isGenerating: boolean;
+  streamingContent: string | null;
 }
 
 // Create a separate CodeBlock component to handle the tooltip state
 const CodeBlock = ({ language, code }: { language: string; code: string }) => {
-  const [showTooltip, setShowTooltip] = React.useState(false);
+  const [showTooltip, setShowTooltip] = useState(false);
   
   const copyToClipboard = () => {
     navigator.clipboard.writeText(code)
@@ -47,29 +63,25 @@ const CodeBlock = ({ language, code }: { language: string; code: string }) => {
         )}
       </div>
       <div className="overflow-x-auto">
-        <Highlight
-          theme={themes.dracula}
-          code={code}
+        <SyntaxHighlighter
+          style={vscDarkPlus}
           language={language || 'text'}
+          PreTag="div"
         >
-          {({className, style, tokens, getLineProps, getTokenProps}) => (
-            <pre className={className} style={{...style, margin: 0, padding: '1rem'}}>
-              {tokens.map((line, i) => (
-                <div key={i} {...getLineProps({line})}>
-                  {line.map((token, key) => (
-                    <span key={key} {...getTokenProps({token})} />
-                  ))}
-                </div>
-              ))}
-            </pre>
-          )}
-        </Highlight>
+          {code}
+        </SyntaxHighlighter>
       </div>
     </div>
   );
 };
 
-export default function MessageList({ messages, isGenerating = false }: MessageListProps) {
+export default function MessageList({ messages, isGenerating, streamingContent }: MessageListProps) {
+  const calculateTokens = (price: NonNullable<Message['price']>) => {
+    const promptTokens = price.promptTokens || 0;
+    const completionTokens = price.completionTokens || 0;
+    return promptTokens + completionTokens;
+  };
+
   return (
     <div className="space-y-4 sm:space-y-6 px-2 sm:px-4 py-2">
       {messages.map((message) => (
@@ -128,7 +140,6 @@ export default function MessageList({ messages, isGenerating = false }: MessageL
           <div className="prose dark:prose-invert max-w-none text-sm sm:text-base leading-relaxed">
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
-              urlTransform={(value: string) => value}
               components={{
                 code: ({ className, children }) => {
                   const match = /language-(\w+)/.exec(className || '');
@@ -177,7 +188,63 @@ export default function MessageList({ messages, isGenerating = false }: MessageL
         </div>
       ))}
       
-      {isGenerating && (
+      {/* Show streaming content */}
+      {isGenerating && streamingContent !== null && (
+        <div className="message-container">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="font-semibold text-sm sm:text-base text-gray-700 dark:text-gray-300">AI</span>
+          </div>
+          <div className="prose dark:prose-invert max-w-none text-sm sm:text-base leading-relaxed">
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={{
+                code: ({ className, children }) => {
+                  const match = /language-(\w+)/.exec(className || '');
+                  const language = match ? match[1] : '';
+                  const isInline = !match && !className;
+                  
+                  return !isInline ? (
+                    <CodeBlock 
+                      language={language} 
+                      code={String(children).replace(/\n$/, '')} 
+                    />
+                  ) : (
+                    <code className="bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded text-sm">
+                      {children}
+                    </code>
+                  );
+                },
+                img: ({ src, alt, ...props }) => {
+                  if (!src || src === '') {
+                    return null;
+                  }
+                  return <img style={{maxWidth: 160}} src={src} alt={alt || 'Image'} className="max-w-full rounded-lg my-2" {...props} />;
+                },
+                a: (props) => (
+                  <a className="text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300 break-words" {...props} />
+                ),
+                blockquote: (props) => (
+                  <blockquote className="border-l-4 border-gray-200 dark:border-gray-700 pl-4 italic my-2" {...props} />
+                ),
+                ul: (props) => (
+                  <ul className="list-disc list-inside space-y-1 my-2" {...props} />
+                ),
+                ol: (props) => (
+                  <ol className="list-decimal list-inside space-y-1 my-2" {...props} />
+                ),
+                p: (props) => (
+                  <p className="whitespace-pre-wrap break-words my-2" {...props} />
+                ),
+              }}
+            >
+              {streamingContent}
+            </ReactMarkdown>
+          </div>
+        </div>
+      )}
+      
+      {/* Loading indicator */}
+      {isGenerating && !streamingContent && (
         <div className="message-container">
           <div className="flex items-center gap-2 mb-1">
             <span className="font-semibold text-sm sm:text-base text-gray-700 dark:text-gray-300">AI</span>

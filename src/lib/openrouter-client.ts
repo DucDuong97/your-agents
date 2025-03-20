@@ -36,6 +36,7 @@ export interface ChatCompletionOptions {
   model: string;
   apiKey: string;
   provider: 'openrouter' | 'openai';
+  onUpdate?: (content: string) => void;
 }
 
 export interface ChatCompletionResponse {
@@ -50,7 +51,7 @@ export interface ChatCompletionResponse {
 // Client-side function to generate chat completion
 export async function generateChatCompletion(options: ChatCompletionOptions): Promise<ChatCompletionResponse> {
   try {
-    const { messages, model, apiKey, provider } = options;
+    const { messages, model, apiKey, provider, onUpdate } = options;
 
     // Check if the model is an Anthropic Claude model or other models that use max_completion_tokens
     const usesMaxCompletionTokens = 
@@ -62,13 +63,14 @@ export async function generateChatCompletion(options: ChatCompletionOptions): Pr
     const requestBody = {
       model: model,
       messages: messages,
+      stream: true,
       ...(usesMaxCompletionTokens 
         ? { max_completion_tokens: 1000 } 
-        : { temperature: 0.7,max_tokens: 1000 })
+        : { temperature: 0.7, max_tokens: 1000 })
     };
 
     if (provider === 'openrouter') {
-      // Call OpenRouter API
+      // Call OpenRouter API with streaming
       const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -85,13 +87,47 @@ export async function generateChatCompletion(options: ChatCompletionOptions): Pr
         throw new Error(`OpenRouter API error: ${response.status} ${JSON.stringify(errorData)}`);
       }
 
-      const data = await response.json();
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let completeContent = '';
+      let totalTokens = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          // Decode the chunk and split into lines
+          const chunk = decoder.decode(value);
+          const lines = chunk.split('\n').filter(line => line.trim() !== '');
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const data = JSON.parse(line.slice(5));
+                if (data.choices?.[0]?.delta?.content) {
+                  const newContent = data.choices[0].delta.content;
+                  completeContent += newContent;
+                  onUpdate?.(completeContent);
+                }
+                // Update token counts if available
+                if (data.usage) {
+                  totalTokens = data.usage;
+                }
+              } catch (e) {
+                console.warn('Error parsing streaming response:', e);
+              }
+            }
+          }
+        }
+      }
+
       return { 
-        content: data.choices[0]?.message?.content || 'No response generated',
-        usage: data.usage
+        content: completeContent || 'No response generated',
+        usage: totalTokens
       };
     } else {
-      // Call OpenAI API
+      // Call OpenAI API with streaming
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -106,10 +142,44 @@ export async function generateChatCompletion(options: ChatCompletionOptions): Pr
         throw new Error(`OpenAI API error: ${response.status} ${JSON.stringify(errorData)}`);
       }
 
-      const data = await response.json();
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let completeContent = '';
+      let totalTokens = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          // Decode the chunk and split into lines
+          const chunk = decoder.decode(value);
+          const lines = chunk.split('\n').filter(line => line.trim() !== '');
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const data = JSON.parse(line.slice(5));
+                if (data.choices?.[0]?.delta?.content) {
+                  const newContent = data.choices[0].delta.content;
+                  completeContent += newContent;
+                  onUpdate?.(completeContent);
+                }
+                // Update token counts if available
+                if (data.usage) {
+                  totalTokens = data.usage;
+                }
+              } catch (e) {
+                console.warn('Error parsing streaming response:', e);
+              }
+            }
+          }
+        }
+      }
+
       return { 
-        content: data.choices[0]?.message?.content || 'No response generated',
-        usage: data.usage
+        content: completeContent || 'No response generated',
+        usage: totalTokens
       };
     }
   } catch (error) {
