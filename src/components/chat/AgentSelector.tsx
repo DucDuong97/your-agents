@@ -3,6 +3,7 @@ import { ChatAgent, agentDB } from '@/lib/db';
 import AgentModal from './AgentModal';
 import AgentImport from './AgentImport';
 import AgentTemplateModal from './AgentTemplateModal';
+import AgentPreviewModal from './AgentPreviewModal';
 
 interface AgentSelectorProps {
   onSelectAgent: (agent: ChatAgent) => void;
@@ -14,7 +15,8 @@ export default function AgentSelector({ onSelectAgent }: AgentSelectorProps) {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [showTemplateModal, setShowTemplateModal] = useState(false);
-  const [initialAgentData, setInitialAgentData] = useState<Omit<ChatAgent, 'id' | 'createdAt' | 'updatedAt'> | undefined>();
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState<Omit<ChatAgent, 'id' | 'createdAt' | 'updatedAt'> | undefined>();
 
   useEffect(() => {
     loadAgents();
@@ -36,7 +38,6 @@ export default function AgentSelector({ onSelectAgent }: AgentSelectorProps) {
       const newAgent = await agentDB.create(agentData);
       setAgents(prev => [newAgent, ...prev]);
       setShowCreateModal(false);
-      setInitialAgentData(undefined);
     } catch (error) {
       console.error('Failed to create agent:', error);
       alert('Failed to create agent. Please try again.');
@@ -44,9 +45,21 @@ export default function AgentSelector({ onSelectAgent }: AgentSelectorProps) {
   };
 
   const handleTemplateSelect = (templateData: Omit<ChatAgent, 'id' | 'createdAt' | 'updatedAt'>) => {
-    setInitialAgentData(templateData);
+    setSelectedTemplate(templateData);
     setShowTemplateModal(false);
-    setShowCreateModal(true);
+    setShowPreviewModal(true);
+  };
+
+  const handleTemplateSave = async (templateData: Omit<ChatAgent, 'id' | 'createdAt' | 'updatedAt'>) => {
+    try {
+      const newAgent = await agentDB.create(templateData);
+      setAgents(prev => [newAgent, ...prev]);
+      setShowPreviewModal(false);
+      setSelectedTemplate(undefined);
+    } catch (error) {
+      console.error('Failed to create agent from template:', error);
+      alert('Failed to create agent from template. Please try again.');
+    }
   };
 
   const handleDeleteAgent = async (agentId: string, e: React.MouseEvent) => {
@@ -125,7 +138,7 @@ export default function AgentSelector({ onSelectAgent }: AgentSelectorProps) {
           </button>
           <button
             onClick={() => {
-              setInitialAgentData(undefined);
+              setSelectedTemplate(undefined);
               setShowCreateModal(true);
             }}
             className="px-3 py-1 text-sm bg-blue-500 hover:bg-blue-600 text-white rounded"
@@ -190,11 +203,9 @@ export default function AgentSelector({ onSelectAgent }: AgentSelectorProps) {
 
       {showCreateModal && (
         <AgentModal
-          initialAgent={initialAgentData}
           onSubmit={handleCreateAgent}
           onClose={() => {
             setShowCreateModal(false);
-            setInitialAgentData(undefined);
           }}
         />
       )}
@@ -210,6 +221,17 @@ export default function AgentSelector({ onSelectAgent }: AgentSelectorProps) {
         <AgentTemplateModal
           onSelect={handleTemplateSelect}
           onClose={() => setShowTemplateModal(false)}
+        />
+      )}
+
+      {showPreviewModal && selectedTemplate && (
+        <AgentPreviewModal
+          template={selectedTemplate}
+          onSave={handleTemplateSave}
+          onClose={() => {
+            setShowPreviewModal(false);
+            setSelectedTemplate(undefined);
+          }}
         />
       )}
     </div>

@@ -14,7 +14,7 @@ export default function AgentTemplateModal({ onSelect, onClose }: AgentTemplateM
       systemPrompt: template.systemPrompt,
       modelName: template.modelName || 'openai/gpt-3.5-turbo',
       provider: template.provider as 'openrouter' | 'openai',
-      examplePrompts: [],
+      examplePrompts: template.examplePrompts || [],
     });
     onClose();
   };
