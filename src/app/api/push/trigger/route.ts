@@ -64,9 +64,9 @@ export async function GET() {
           JSON.stringify(notificationPayload)
         );
         console.log('Notification sent successfully');
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.error('Error sending to subscription:', error);
-        if (error.statusCode && error.statusCode == 410) {
+        if (error && typeof error === 'object' && 'statusCode' in error && error.statusCode === 410) {
           // Remove the subscription from the database
           await query(
             'DELETE FROM push_subscriptions WHERE endpoint = ?',
