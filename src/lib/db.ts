@@ -25,6 +25,7 @@ export interface Chat {
   messages: Message[];
   createdAt: string;
   updatedAt: string;
+  unread?: boolean; // Flag to indicate unread chat sessions
 }
 
 export interface ChatAgent {
@@ -44,6 +45,165 @@ export interface ChatAgent {
   updatedAt: string;
 }
 
+// Initialize and open IndexedDB
+const DB_NAME = 'chatbotDB';
+const DB_VERSION = 1;
+const STORES = {
+  CHATS: 'chats',
+  AGENTS: 'agents'
+};
+
+function openDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    if (typeof window === 'undefined') {
+      reject(new Error('IndexedDB is not available in this environment'));
+      return;
+    }
+
+    const request = window.indexedDB.open(DB_NAME, DB_VERSION);
+
+    request.onerror = () => {
+      console.error('Error opening IndexedDB:', request.error);
+      reject(request.error);
+    };
+
+    request.onsuccess = () => {
+      resolve(request.result);
+    };
+
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      
+      // Create object stores if they don't exist
+      if (!db.objectStoreNames.contains(STORES.CHATS)) {
+        db.createObjectStore(STORES.CHATS, { keyPath: 'id' });
+      }
+      
+      if (!db.objectStoreNames.contains(STORES.AGENTS)) {
+        db.createObjectStore(STORES.AGENTS, { keyPath: 'id' });
+      }
+    };
+  });
+}
+
+// Helper functions for IndexedDB operations
+async function getAllItems<T>(storeName: string): Promise<T[]> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(storeName, 'readonly');
+    const store = transaction.objectStore(storeName);
+    const request = store.getAll();
+    
+    request.onsuccess = () => {
+      resolve(request.result);
+    };
+    
+    request.onerror = () => {
+      console.error(`Error getting all items from ${storeName}:`, request.error);
+      reject(request.error);
+    };
+  });
+}
+
+async function getItem<T>(storeName: string, id: string): Promise<T | null> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(storeName, 'readonly');
+    const store = transaction.objectStore(storeName);
+    const request = store.get(id);
+    
+    request.onsuccess = () => {
+      resolve(request.result || null);
+    };
+    
+    request.onerror = () => {
+      console.error(`Error getting item from ${storeName}:`, request.error);
+      reject(request.error);
+    };
+  });
+}
+
+async function addItem<T>(storeName: string, item: T): Promise<T> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(storeName, 'readwrite');
+    const store = transaction.objectStore(storeName);
+    const request = store.put(item);
+    
+    request.onsuccess = () => {
+      resolve(item);
+    };
+    
+    request.onerror = () => {
+      console.error(`Error adding item to ${storeName}:`, request.error);
+      reject(request.error);
+    };
+  });
+}
+
+async function deleteItem(storeName: string, id: string): Promise<boolean> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(storeName, 'readwrite');
+    const store = transaction.objectStore(storeName);
+    const request = store.delete(id);
+    
+    request.onsuccess = () => {
+      resolve(true);
+    };
+    
+    request.onerror = () => {
+      console.error(`Error deleting item from ${storeName}:`, request.error);
+      reject(request.error);
+    };
+  });
+}
+
+// Migration utility to move data from localStorage to IndexedDB
+export async function migrateFromLocalStorage(): Promise<void> {
+  if (typeof window === 'undefined') return;
+  
+  try {
+    // Check if migration is needed
+    const migrationCompleted = localStorage.getItem('indexedDBMigrationCompleted');
+    if (migrationCompleted === 'true') {
+      console.log('Migration already completed');
+      return;
+    }
+    
+    // Migrate chats
+    const chatsJson = localStorage.getItem('chats');
+    if (chatsJson) {
+      const chats = JSON.parse(chatsJson);
+      if (Array.isArray(chats)) {
+        for (const chat of chats) {
+          await addItem(STORES.CHATS, chat);
+        }
+        console.log(`Migrated ${chats.length} chats from localStorage to IndexedDB`);
+      }
+    }
+    
+    // Migrate agents
+    const agentsJson = localStorage.getItem('agents');
+    if (agentsJson) {
+      const agents = JSON.parse(agentsJson);
+      if (Array.isArray(agents)) {
+        for (const agent of agents) {
+          await addItem(STORES.AGENTS, agent);
+        }
+        console.log(`Migrated ${agents.length} agents from localStorage to IndexedDB`);
+      }
+    }
+    
+    // Mark migration as completed
+    localStorage.setItem('indexedDBMigrationCompleted', 'true');
+    console.log('Migration from localStorage to IndexedDB completed successfully');
+  } catch (error) {
+    console.error('Error during migration from localStorage to IndexedDB:', error);
+    throw error;
+  }
+}
+
 // Client-side storage operations for chats
 export const chatDB = {
   async create(data: Omit<Chat, 'id' | 'createdAt' | 'updatedAt'>): Promise<Chat> {
@@ -55,74 +215,42 @@ export const chatDB = {
       updatedAt: now,
     };
     
-    const chats = await this.list();
-    chats.unshift(chat);
-    
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('chats', JSON.stringify(chats));
-    }
-    
+    await addItem(STORES.CHATS, chat);
     return chat;
   },
   
   async get(id: string): Promise<Chat | null> {
-    const chats = await this.list();
-    const chat = chats.find(c => c.id === id);
-    return chat || null;
+    return getItem<Chat>(STORES.CHATS, id);
   },
   
   async update(id: string, data: Partial<Omit<Chat, 'id' | 'createdAt' | 'updatedAt'>>): Promise<Chat | null> {
-    const chats = await this.list();
-    const index = chats.findIndex(c => c.id === id);
-    
-    if (index === -1) return null;
+    const chat = await this.get(id);
+    if (!chat) return null;
     
     const updatedChat: Chat = {
-      ...chats[index],
+      ...chat,
       ...data,
       updatedAt: new Date().toISOString(),
     };
     
-    chats[index] = updatedChat;
-    
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('chats', JSON.stringify(chats));
-    }
-    
+    await addItem(STORES.CHATS, updatedChat);
     return updatedChat;
   },
   
   async delete(id: string): Promise<boolean> {
-    const chats = await this.list();
-    const filteredChats = chats.filter(c => c.id !== id);
-    
-    if (filteredChats.length === chats.length) return false;
-    
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('chats', JSON.stringify(filteredChats));
-    }
-    
-    return true;
+    return deleteItem(STORES.CHATS, id);
   },
   
   async list(): Promise<Chat[]> {
-    if (typeof window === 'undefined') return [];
-    
-    const chatsJson = localStorage.getItem('chats');
-    let chats = [];
-    
     try {
-      const parsedData = chatsJson ? JSON.parse(chatsJson) : [];
-      chats = Array.isArray(parsedData) ? parsedData : [];
+      const chats = await getAllItems<Chat>(STORES.CHATS);
+      return chats.sort((a: Chat, b: Chat) => 
+        new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+      );
     } catch (error) {
-      console.error('Error parsing chats from localStorage:', error);
-      // Return empty array if parsing fails
+      console.error('Error listing chats from IndexedDB:', error);
       return [];
     }
-    
-    return chats.sort((a: Chat, b: Chat) => 
-      new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-    );
   },
   
   async listByAgentId(agentId: string): Promise<Chat[]> {
@@ -142,6 +270,13 @@ export const chatDB = {
     
     const messages = [...chat.messages, newMessage];
     return this.update(chatId, { messages });
+  },
+
+  async markAsRead(chatId: string): Promise<Chat | null> {
+    const chat = await this.get(chatId);
+    if (!chat || !chat.unread) return chat; // No change needed if chat is null or already read
+    
+    return this.update(chatId, { unread: false });
   }
 };
 
@@ -156,73 +291,41 @@ export const agentDB = {
       updatedAt: now,
     };
     
-    const agents = await this.list();
-    agents.unshift(agent);
-    
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('agents', JSON.stringify(agents));
-    }
-    
+    await addItem(STORES.AGENTS, agent);
     return agent;
   },
   
   async get(id: string): Promise<ChatAgent | null> {
-    const agents = await this.list();
-    const agent = agents.find(a => a.id === id);
-    return agent || null;
+    return getItem<ChatAgent>(STORES.AGENTS, id);
   },
   
   async update(id: string, data: Partial<Omit<ChatAgent, 'id' | 'createdAt' | 'updatedAt'>>): Promise<ChatAgent | null> {
-    const agents = await this.list();
-    const index = agents.findIndex(a => a.id === id);
-    
-    if (index === -1) return null;
+    const agent = await this.get(id);
+    if (!agent) return null;
     
     const updatedAgent: ChatAgent = {
-      ...agents[index],
+      ...agent,
       ...data,
       updatedAt: new Date().toISOString(),
     };
     
-    agents[index] = updatedAgent;
-    
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('agents', JSON.stringify(agents));
-    }
-    
+    await addItem(STORES.AGENTS, updatedAgent);
     return updatedAgent;
   },
   
   async delete(id: string): Promise<boolean> {
-    const agents = await this.list();
-    const filteredAgents = agents.filter(a => a.id !== id);
-    
-    if (filteredAgents.length === agents.length) return false;
-    
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('agents', JSON.stringify(filteredAgents));
-    }
-    
-    return true;
+    return deleteItem(STORES.AGENTS, id);
   },
   
   async list(): Promise<ChatAgent[]> {
-    if (typeof window === 'undefined') return [];
-    
-    const agentsJson = localStorage.getItem('agents');
-    let agents = [];
-    
     try {
-      const parsedData = agentsJson ? JSON.parse(agentsJson) : [];
-      agents = Array.isArray(parsedData) ? parsedData : [];
+      const agents = await getAllItems<ChatAgent>(STORES.AGENTS);
+      return agents.sort((a: ChatAgent, b: ChatAgent) => 
+        new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+      );
     } catch (error) {
-      console.error('Error parsing agents from localStorage:', error);
-      // Return empty array if parsing fails
+      console.error('Error listing agents from IndexedDB:', error);
       return [];
     }
-    
-    return agents.sort((a: ChatAgent, b: ChatAgent) => 
-      new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-    );
   }
 }; 

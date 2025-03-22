@@ -121,12 +121,26 @@ export default function ChatSessionList({ agentId, onSelectChat, onNewChat }: Ch
           {chats.map(chat => (
             <div
               key={chat.id}
-              onClick={() => onSelectChat(chat)}
-              className="p-3 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
+              onClick={() => {
+                // Select the chat - don't mark as read here
+                onSelectChat(chat);
+              }}
+              className={`p-3 border ${
+                chat.unread 
+                  ? 'border-blue-300 dark:border-blue-600 bg-blue-50 dark:bg-blue-900/20' 
+                  : 'border-gray-200 dark:border-gray-700'
+              } rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer`}
             >
               <div className="flex justify-between items-start">
                 <div className="flex-1">
-                  <h3 className="font-medium text-gray-900 dark:text-white">{chat.title}</h3>
+                  <h3 className="font-medium text-gray-900 dark:text-white">
+                    {chat.title}
+                    {chat.unread && (
+                      <span className="ml-2 inline-flex items-center justify-center w-2 h-2 bg-blue-500 rounded-full" 
+                            title="Unread messages">
+                      </span>
+                    )}
+                  </h3>
                   <div className="flex justify-start items-center gap-4">
                     <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
                       {format(new Date(chat.updatedAt), 'MMM d, yyyy h:mm a')}

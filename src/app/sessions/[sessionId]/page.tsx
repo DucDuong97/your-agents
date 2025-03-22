@@ -61,12 +61,33 @@ export default function SessionPage() {
           return;
         }
         
-        setState(prev => ({
-          ...prev,
-          currentChat: chat,
-          messages: chat.messages,
-          selectedAgent: agent,
-        }));
+        // Mark the chat as read if it's unread
+        if (chat.unread) {
+          const updatedChat = await chatDB.markAsRead(chat.id);
+          if (updatedChat) {
+            // Use the updated chat
+            setState(prev => ({
+              ...prev,
+              currentChat: updatedChat,
+              messages: updatedChat.messages,
+              selectedAgent: agent,
+            }));
+          } else {
+            setState(prev => ({
+              ...prev,
+              currentChat: chat,
+              messages: chat.messages,
+              selectedAgent: agent,
+            }));
+          }
+        } else {
+          setState(prev => ({
+            ...prev,
+            currentChat: chat,
+            messages: chat.messages,
+            selectedAgent: agent,
+          }));
+        }
       } catch (error) {
         console.error('Failed to load chat data:', error);
       } finally {

@@ -1,111 +1,132 @@
+// Push Notification Utilities
+
+// Function to request permission for push notifications
 export async function requestNotificationPermission(): Promise<boolean> {
   try {
-    // Check if service workers are supported
-    if (!('serviceWorker' in navigator)) {
-      console.error('Service workers are not supported');
-      return false;
-    }
-
     // Check if push notifications are supported
-    if (!('PushManager' in window)) {
+    if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
       console.error('Push notifications are not supported');
       return false;
     }
-
-    // Check if notifications are supported
-    if (!('Notification' in window)) {
-      console.error('Notifications are not supported');
+    
+    // Check if we already have permission
+    if (Notification.permission === 'granted') {
+      return true;
+    }
+    
+    // Request permission
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') {
+      console.error('Notification permission denied');
       return false;
     }
-
-    // Check if notifications are blocked in system settings
-    const permission = await Notification.requestPermission();
-    console.log('Notification permission:', permission);
-
-    if (permission === 'granted') {
-      // Check if service worker is registered
-      const registration = await navigator.serviceWorker.ready;
-      console.log('Service Worker status:', registration.active ? 'active' : 'inactive');
-      
-      // Check if push subscription exists
-      const subscription = await registration.pushManager.getSubscription();
-      console.log('Push subscription status:', subscription ? 'exists' : 'none');
-      
-      if (!subscription) {
-        await subscribeToPushNotifications();
-      }
-    }
-
-    return permission === 'granted';
+    
+    // Subscribe to push notifications
+    return await subscribeToPushNotifications();
   } catch (error) {
-    console.error('Error checking notification support:', error);
+    console.error('Error requesting notification permission:', error);
     return false;
   }
 }
 
-export async function subscribeToPushNotifications() {
-  console.log('Subscribing to push notifications');
+// Subscribe to push notifications
+async function subscribeToPushNotifications(): Promise<boolean> {
   try {
-    // Check if service worker is already registered
-    let registration = await navigator.serviceWorker.getRegistration();
+    const registration = await navigator.serviceWorker.ready;
     
-    if (!registration) {
-      console.log('Registering new service worker');
-      registration = await navigator.serviceWorker.register('/sw.js', {
-        scope: '/'
+    // Get the server's public key
+    const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+    
+    if (!publicKey) {
+      console.error('Missing VAPID public key');
+      return false;
+    }
+    
+    // Convert the public key to Uint8Array
+    const applicationServerKey = urlBase64ToUint8Array(publicKey);
+    
+    console.log('Subscribing to push notifications');
+    
+    // Check for existing subscription first
+    let subscription = await registration.pushManager.getSubscription();
+    
+    if (!subscription) {
+      // Create a new subscription
+      subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey
       });
     }
     
-    console.log('Service Worker registered:', registration);
-
-    // Wait for the service worker to be ready
-    if (registration.active) {
-      console.log('Service Worker is already active');
-    } else {
-      console.log('Waiting for Service Worker to activate...');
-      await new Promise<void>((resolve) => {
-        registration.addEventListener('activate', () => {
-          console.log('Service Worker activated');
-          resolve();
-        });
-      });
-    }
-
-    // Now that the service worker is active, we can subscribe
-    const subscription = await registration.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
-    });
-    console.log('Push subscription:', subscription);
-
     // Send the subscription to the server
-    await fetch('/api/push/subscribe', {
+    const response = await fetch('/api/push/subscribe', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(subscription),
     });
-
-    return subscription;
+    
+    if (!response.ok) {
+      console.error('Failed to register push subscription on server');
+      return false;
+    }
+    
+    console.log('Push notification subscription successful');
+    return true;
   } catch (error) {
     console.error('Error subscribing to push notifications:', error);
-    throw error;
+    return false;
   }
 }
 
-export async function unsubscribeFromPushNotifications() {
+// Unsubscribe from push notifications
+export async function unsubscribeFromPushNotifications(): Promise<boolean> {
   try {
     const registration = await navigator.serviceWorker.ready;
     const subscription = await registration.pushManager.getSubscription();
     
-    if (subscription) {
-      await subscription.unsubscribe();
-      // You might want to notify the server that the user has unsubscribed
-      // await fetch('/api/push/unsubscribe', { method: 'POST' });
+    if (!subscription) {
+      return true; // Already unsubscribed
     }
+    
+    // Unsubscribe locally
+    await subscription.unsubscribe();
+    
+    // Notify the server
+    const response = await fetch('/api/push/unsubscribe', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ endpoint: subscription.endpoint }),
+    });
+    
+    if (!response.ok) {
+      console.error('Failed to unsubscribe on server');
+      return false;
+    }
+    
+    return true;
   } catch (error) {
     console.error('Error unsubscribing from push notifications:', error);
-    throw error;
+    return false;
   }
-} 
+}
+
+// Helper: Convert base64 string to Uint8Array for VAPID key
+function urlBase64ToUint8Array(base64String: string): Uint8Array {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding)
+    .replace(/-/g, '+')
+    .replace(/_/g, '/');
+
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  
+  return outputArray;
+}
