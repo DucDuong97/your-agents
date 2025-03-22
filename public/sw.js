@@ -354,8 +354,6 @@ self.addEventListener('push', function(event) {
             icon: notificationPayload.icon,
             badge: notificationPayload.badge,
             data: notificationPayload.data,
-            vibrate: [100, 50, 100],
-            requireInteraction: true
           });
           
           // Update lastSent time in IndexedDB
