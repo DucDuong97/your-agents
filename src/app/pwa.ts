@@ -2,6 +2,7 @@
 
 // Function to register the service worker
 export function registerServiceWorker() {
+  console.log('Registering service worker:', 'serviceWorker' in navigator);
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
       navigator.serviceWorker.register('/sw.js')
