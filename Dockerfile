@@ -16,9 +16,17 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# Set environment variables
+# Set default values for environment variables
+ARG NEXT_PUBLIC_VAPID_PUBLIC_KEY=BGYqmeGbAz7IEUsSA9r_6miH0P-XpfXqUHaX93z7y84b9sbkNpgR1VyG74alIrc_AwYfA1zCHC1euKa11iBLtbo
+ARG VAPID_PRIVATE_KEY=wquSNlo4WaPUltOUx2mXq-KOhQEOheA-vi_fdsoTnvc
+ARG NEXT_PUBLIC_APP_URL=http://localhost:3000
+
+# Set environment variables for build
 ENV NODE_ENV production
 ENV NEXT_TELEMETRY_DISABLED 1
+ENV NEXT_PUBLIC_VAPID_PUBLIC_KEY=${NEXT_PUBLIC_VAPID_PUBLIC_KEY}
+ENV VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY}
+ENV NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL}
 
 # Build the application
 RUN npm run build
@@ -29,6 +37,11 @@ WORKDIR /app
 
 ENV NODE_ENV production
 ENV NEXT_TELEMETRY_DISABLED 1
+
+# Set runtime environment variables
+ENV NEXT_PUBLIC_VAPID_PUBLIC_KEY=${NEXT_PUBLIC_VAPID_PUBLIC_KEY}
+ENV VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY}
+ENV NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL}
 
 # Create a non-root user to run the app
 RUN addgroup --system --gid 1001 nodejs
