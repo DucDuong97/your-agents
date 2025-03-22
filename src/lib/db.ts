@@ -35,6 +35,11 @@ export interface ChatAgent {
   provider: 'openrouter' | 'openai';
   examplePrompts: string[];
   oneShotExample?: string; // Optional one-shot example for prompt engineering
+  scheduledNotifications?: {
+    enabled: boolean;
+    time: string; // Format: "HH:mm" (24-hour)
+    lastSent?: string; // ISO date string
+  };
   createdAt: string;
   updatedAt: string;
 }

@@ -63,6 +63,7 @@ export default function AgentPage() {
           provider: updatedAgent.provider,
           examplePrompts: updatedAgent.examplePrompts,
           oneShotExample: updatedAgent.oneShotExample,
+          scheduledNotifications: updatedAgent.scheduledNotifications,
         });
         
         // Update both the selectedAgent state and the agentName

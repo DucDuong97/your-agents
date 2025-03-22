@@ -5,6 +5,7 @@ import { getModels } from '@/lib/modelUtils';
 import { generateExamplePrompts, generateExamplePromptsSync } from '@/lib/promptUtils';
 import ModelSelect from './ModelSelect';
 import SystemPromptEditor from './SystemPromptEditor';
+import { requestNotificationPermission } from '../../utils/pushNotifications';
 
 interface AgentModalProps {
   initialAgent?: Omit<ChatAgent, 'id' | 'createdAt' | 'updatedAt'> | ChatAgent;
@@ -25,6 +26,11 @@ export default function AgentModal({ initialAgent, onSubmit, onClose }: AgentMod
       provider: initialAgent.provider,
       examplePrompts: initialAgent.examplePrompts || [],
       oneShotExample: initialAgent.oneShotExample || '',
+      scheduledNotifications: initialAgent.scheduledNotifications || {
+        enabled: false,
+        time: '07:00',
+        lastSent: undefined
+      }
     } : {
       name: '',
       systemPrompt: 'You are a helpful assistant.',
@@ -32,6 +38,11 @@ export default function AgentModal({ initialAgent, onSubmit, onClose }: AgentMod
       provider: 'openrouter',
       examplePrompts: [],
       oneShotExample: '',
+      scheduledNotifications: {
+        enabled: false,
+        time: '07:00',
+        lastSent: undefined
+      }
     },
   });
 
@@ -53,6 +64,16 @@ export default function AgentModal({ initialAgent, onSubmit, onClose }: AgentMod
     try {
       // Show loading state
       setIsSubmitting(true);
+      
+      // Handle push notification subscription if enabled
+      if (data.scheduledNotifications?.enabled) {
+        const permissionGranted = await requestNotificationPermission();
+        if (!permissionGranted) {
+          alert('Please enable notifications to receive scheduled messages');
+          setIsSubmitting(false);
+          return;
+        }
+      }
       
       // Generate example prompts based on agent configuration
       let examplePrompts: string[];
@@ -122,6 +143,19 @@ export default function AgentModal({ initialAgent, onSubmit, onClose }: AgentMod
   };
 
   const { input: exampleInput, output: exampleOutput } = extractExampleParts();
+
+  const handleScheduledNotificationsToggle = (enabled: boolean) => {
+    const currentSettings = watch('scheduledNotifications') || {
+      enabled: false,
+      time: '07:00',
+      lastSent: undefined
+    };
+    setValue('scheduledNotifications', {
+      ...currentSettings,
+      enabled,
+      time: currentSettings.time || '07:00'
+    });
+  };
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -248,6 +282,29 @@ export default function AgentModal({ initialAgent, onSubmit, onClose }: AgentMod
               )}
             </div>
             
+            <div className="mb-6">
+              <div className="space-y-4">
+                <div className="flex items-center">
+                    <input
+                      type="checkbox"
+                      id="scheduledNotificationsToggle"
+                      checked={watch('scheduledNotifications.enabled')}
+                      onChange={(e) => handleScheduledNotificationsToggle(e.target.checked)}
+                      className="h-4 w-4 text-hsl(240, 100%, 50%)-600 focus:ring-blue-500 border-gray-300 rounded"
+                    />
+                    <label htmlFor="scheduledNotificationsToggle" className="ml-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Enable Daily Messages at 7 AM
+                    </label>
+                  </div>
+
+                  {watch('scheduledNotifications.enabled') && (
+                    <div className="ml-6 text-sm text-gray-500 dark:text-gray-400">
+                      You will receive a message from {watch('name')} every day at 7 AM.
+                    </div>
+                  )}
+                </div>
+            </div>
+            
             <div className="flex justify-end space-x-3">
               <button
                 type="button"
@@ -258,10 +315,10 @@ export default function AgentModal({ initialAgent, onSubmit, onClose }: AgentMod
               </button>
               <button
                 type="submit"
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-500 hover:bg-blue-600 rounded-md"
                 disabled={isSubmitting}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-500 hover:bg-blue-600 rounded-md disabled:opacity-50"
               >
-                {isSubmitting ? 'Saving...' : 'Save Agent'}
+                {isSubmitting ? 'Saving...' : 'Save Changes'}
               </button>
             </div>
           </form>
