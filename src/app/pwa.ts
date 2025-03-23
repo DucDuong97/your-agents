@@ -10,7 +10,7 @@ export function registerServiceWorker() {
     navigator.serviceWorker.register('/sw.js')
       .then(async (registration) => {
         console.log('[PWA] Service Worker registered with scope:', registration.scope);
-        await subscribeToPushNotifications(registration);
+        await subscribeToPushNotifications();
       })
       .catch(error => {
         console.error('[PWA] Service Worker registration failed:', error);

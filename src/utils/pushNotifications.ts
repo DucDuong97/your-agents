@@ -29,8 +29,10 @@ export async function requestNotificationPermission(): Promise<boolean> {
 }
 
 // Subscribe to push notifications
-export async function subscribeToPushNotifications(registration: ServiceWorkerRegistration): Promise<boolean> {
+export async function subscribeToPushNotifications(): Promise<boolean> {
   try {
+    const registration = await navigator.serviceWorker.ready;
+    
     // Get the server's public key
     const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
     
@@ -68,14 +70,14 @@ export async function subscribeToPushNotifications(registration: ServiceWorkerRe
     });
     
     if (!response.ok) {
-      console.error('[PWA] Failed to register push subscription on server');
+      console.error('Failed to register push subscription on server');
       return false;
     }
     
-    console.log('[PWA] Push notification subscription successful');
+    console.log('Push notification subscription successful');
     return true;
   } catch (error) {
-    console.error('[PWA] Error subscribing to push notifications:', error);
+    console.error('Error subscribing to push notifications:', error);
     return false;
   }
 }
