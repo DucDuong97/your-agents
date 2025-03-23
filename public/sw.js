@@ -22,7 +22,8 @@ self.addEventListener('install', (event) => {
     caches.open(CACHE).then(function (cache) {
       console.log("[PWA Builder] Cached offline page during install");
       
-      return cache.addAll([
+      // Use Promise.allSettled instead of addAll to handle failed requests gracefully
+      const urlsToCache = [
         offlineFallbackPage,
         '/',
         '/home',
@@ -35,7 +36,25 @@ self.addEventListener('install', (event) => {
         '/icons/icon-192x192.png',
         '/icons/icon-384x384.png',
         '/icons/icon-512x512.png'
-      ]);
+      ];
+      
+      return Promise.allSettled(
+        urlsToCache.map(url => {
+          return fetch(url)
+            .then(response => {
+              // Only cache successful responses
+              if (!response.ok) {
+                throw new Error(`Failed to cache ${url}: ${response.status} ${response.statusText}`);
+              }
+              return cache.put(url, response);
+            })
+            .catch(error => {
+              console.warn(`[PWA Builder] Couldn't cache ${url}: ${error.message}`);
+              // Continue with other cache operations without failing
+              return Promise.resolve();
+            });
+        })
+      );
     })
   );
 });
@@ -67,11 +86,9 @@ self.addEventListener("fetch", function (event) {
   event.respondWith(
     fetch(event.request)
       .then(function (response) {
-        // console.log("[PWA Builder] add page to offline cache: " + response.url);
-
         // If request was success, add or update it in the cache
-        // Only cache if the URL is cacheable
-        if (isCacheableURL(event.request.url)) {
+        // Only cache if the URL is cacheable and the response is valid (2xx status)
+        if (isCacheableURL(event.request.url) && response.ok) {
           event.waitUntil(updateCache(event.request, response.clone()));
         }
 
@@ -79,7 +96,13 @@ self.addEventListener("fetch", function (event) {
       })
       .catch(function (error) {
         console.log("[PWA Builder] Network request Failed. Serving content from cache: " + error);
-        return fromCache(event.request);
+        return fromCache(event.request)
+          .catch(() => {
+            // If the resource is not in the cache, return the offline page
+            return caches.open(CACHE).then(function (cache) {
+              return cache.match(offlineFallbackPage);
+            });
+          });
       })
   );
 });
@@ -106,8 +129,17 @@ function updateCache(request, response) {
     return Promise.resolve(); // Return a resolved promise to avoid errors
   }
   
+  // Don't cache error responses
+  if (!response.ok) {
+    console.log(`[PWA Builder] Not caching error response (${response.status}) for: ${request.url}`);
+    return Promise.resolve();
+  }
+  
   return caches.open(CACHE).then(function (cache) {
-    return cache.put(request, response);
+    return cache.put(request, response).catch(err => {
+      console.error(`[PWA Builder] Error caching ${request.url}: ${err}`);
+      return Promise.resolve(); // Prevent the error from propagating
+    });
   });
 }
 
