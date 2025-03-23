@@ -11,7 +11,14 @@ export async function requestNotificationPermission(): Promise<boolean> {
     
     // Check if we already have permission
     if (Notification.permission === 'granted') {
-      return true;
+      // Check if we already have a subscription
+      const registration = await navigator.serviceWorker.ready;
+      const existingSubscription = await registration.pushManager.getSubscription();
+      
+      if (existingSubscription) {
+        console.log('Push notification subscription already exists');
+        return true;
+      }
     }
     
     // Request permission
