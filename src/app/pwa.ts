@@ -2,15 +2,16 @@
 
 // Function to register the service worker
 export function registerServiceWorker() {
-  console.log('Registering service worker:', 'serviceWorker' in navigator);
+  console.log('[PWA] Registering service worker:', 'serviceWorker' in navigator);
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
+      console.log('[PWA] Loading service worker');
       navigator.serviceWorker.register('/sw.js')
         .then(registration => {
-          console.log('Service Worker registered with scope:', registration.scope);
+          console.log('[PWA] Service Worker registered with scope:', registration.scope);
         })
         .catch(error => {
-          console.error('Service Worker registration failed:', error);
+          console.error('[PWA] Service Worker registration failed:', error);
         });
     });
   }

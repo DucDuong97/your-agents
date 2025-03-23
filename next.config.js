@@ -1,12 +1,12 @@
-// Import next-pwa using ES modules
-import withPWA from 'next-pwa';
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const withPWA = require('next-pwa');
 
 const nextConfig = {
   reactStrictMode: true,
   output: 'standalone',
 };
 
-export default withPWA({
+module.exports = withPWA({
   dest: 'public',
   register: true,
   skipWaiting: true,
