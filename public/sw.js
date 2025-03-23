@@ -277,29 +277,89 @@ async function updateAgentLastSent(agentId) {
 }
 
 // Helper function to generate a reminder message
-function generateReminderMessage(agent) {
+async function generateReminderMessage(agent) {
+  // Hard-coded API key for OpenAI
+  const OPENAI_API_KEY = 'sk-REDACTED';
+  
   const currentHour = new Date().getHours();
-  let periodText = '';
+  let timeContext = '';
   
   if (currentHour >= 5 && currentHour < 12) {
-    periodText = 'morning';
+    timeContext = 'morning';
   } else if (currentHour >= 12 && currentHour < 17) {
-    periodText = 'afternoon';
+    timeContext = 'afternoon';
   } else if (currentHour >= 17 && currentHour < 22) {
-    periodText = 'evening';
+    timeContext = 'evening';
   } else {
-    periodText = 'day';
+    timeContext = 'night';
   }
   
-  return `It's time for your scheduled conversation with ${agent.name}. Would you like to continue your ${periodText} tasks?`;
+  try {
+    // Get the system prompt from agent, or use a default if not available
+    const systemPrompt = agent.systemPrompt || `I am ${agent.name}, an AI assistant.`;
+    
+    // Craft a prompt for OpenAI that will generate an action-oriented reminder
+    const prompt = `
+      You are ${agent.name}. 
+      System context: ${systemPrompt}
+      
+      It's ${timeContext} time. Create a brief, engaging reminder message that:
+      1. Feels like it comes from the agent's persona
+      2. Contains a specific call-to-action based on the agent's role and purpose
+      3. Is friendly and motivating
+      4. Mentions a practical next step the user could take
+      
+      Just provide the message text directly with no additional formatting.
+    `;
+    
+    // Call OpenAI API
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${OPENAI_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'system',
+            content: 'You create brief, engaging reminder messages from AI assistants to their users.'
+          },
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        max_tokens: 150,
+        temperature: 0.7
+      })
+    });
+    
+    if (!response.ok) {
+      throw new Error(`OpenAI API error: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    const generatedMessage = data.choices[0].message.content.trim();
+    
+    // Return the generated message
+    return generatedMessage;
+  } catch (error) {
+    console.error('Error generating reminder message with OpenAI:', error);
+    
+    // Fallback message if API call fails
+    return error.message;
+    return `It's ${timeContext} time! ${agent.name} is ready to help you with your tasks. What would you like to work on today?`;
+  }
 }
 
 // Handle push events
 self.addEventListener('push', function(event) {
-  console.log('Push event received:', event);
+  console.log('[Service Worker] Push event received:', event);
   
   if (!event.data) {
-    console.log('No data received in push event');
+    console.log('[Service Worker] No data received in push event');
     return;
   }
 
@@ -307,11 +367,11 @@ self.addEventListener('push', function(event) {
     try {
       // Check if this is a custom notification with data
       const data = event.data.json();
-      console.log('Push data:', data);
+      console.log('[Service Worker] Push data:', data);
       
       // Get agents from IndexedDB
       const agents = await getAgentsFromIndexedDB();
-      console.log('Fetched agents from IndexedDB:', agents);
+      console.log('[Service Worker] Fetched agents from IndexedDB:', agents);
       
       // Filter agents with scheduled notifications enabled
       const agentsWithScheduledNotifications = agents.filter(agent => 
@@ -319,18 +379,18 @@ self.addEventListener('push', function(event) {
       );
       
       if (agentsWithScheduledNotifications.length === 0) {
-        console.log('No agents with scheduled notifications');
+        console.log('[Service Worker] No agents with scheduled notifications');
         return;
       }
       
-      console.log('Agents with scheduled notifications:', agentsWithScheduledNotifications);
+      console.log('[Service Worker] Agents with scheduled notifications:', agentsWithScheduledNotifications);
       
       for (const agent of agentsWithScheduledNotifications) {
         // Check if scheduled time matches current time
-        console.log(`It's time to send a notification for agent: ${agent.name}`);
+        console.log(`[Service Worker] It's time to send a notification for agent: ${agent.name}`);
           
-        // Generate a custom reminder message
-        const reminderMessage = generateReminderMessage(agent);
+        // Generate a custom reminder message - now properly awaited
+        const reminderMessage = await generateReminderMessage(agent);
         
         // Create a new chat session with the reminder message in IndexedDB
         const chatSession = await createChatSession(agent, reminderMessage);
@@ -371,12 +431,12 @@ self.addEventListener('push', function(event) {
 
 // Handle notification clicks
 self.addEventListener('notificationclick', function(event) {
-  console.log('Notification clicked:', event);
+  console.log('[Service Worker] Notification clicked:', event);
   
   event.notification.close();
 
   if (event.action === 'open' || !event.action) {
-    console.log('Opening URL:', event.notification.data.url);
+    console.log('[Service Worker] Opening URL:', event.notification.data.url);
     
     // If this is a chat notification with a session ID, mark it as read
     if (event.notification.data && event.notification.data.url) {
@@ -385,7 +445,7 @@ self.addEventListener('notificationclick', function(event) {
       
       if (chatId) {
         // Note: Not marking as read here, session page will handle it
-        console.log(`Opening chat session: ${chatId}`);
+        console.log(`[Service Worker] Opening chat session: ${chatId}`);
       }
     }
     
