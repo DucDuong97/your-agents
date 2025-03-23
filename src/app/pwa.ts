@@ -1,13 +1,16 @@
 'use client';
 
+import { subscribeToPushNotifications } from '@/utils/pushNotifications';
+
 // Function to register the service worker
 export function registerServiceWorker() {
   console.log('[PWA] Registering service worker:', 'serviceWorker' in navigator);
   if ('serviceWorker' in navigator) {
     console.log('[PWA] Loading service worker');
     navigator.serviceWorker.register('/sw.js')
-      .then(registration => {
+      .then(async (registration) => {
         console.log('[PWA] Service Worker registered with scope:', registration.scope);
+        await subscribeToPushNotifications(registration);
       })
       .catch(error => {
         console.error('[PWA] Service Worker registration failed:', error);

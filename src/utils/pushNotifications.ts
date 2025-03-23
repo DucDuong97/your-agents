@@ -11,14 +11,7 @@ export async function requestNotificationPermission(): Promise<boolean> {
     
     // Check if we already have permission
     if (Notification.permission === 'granted') {
-      // Check if we already have a subscription
-      const registration = await navigator.serviceWorker.ready;
-      const existingSubscription = await registration.pushManager.getSubscription();
-      
-      if (existingSubscription) {
-        console.log('Push notification subscription already exists');
-        return true;
-      }
+      return true;
     }
     
     // Request permission
@@ -27,9 +20,8 @@ export async function requestNotificationPermission(): Promise<boolean> {
       console.error('Notification permission denied');
       return false;
     }
-    
-    // Subscribe to push notifications
-    return await subscribeToPushNotifications();
+
+    return true;
   } catch (error) {
     console.error('Error requesting notification permission:', error);
     return false;
@@ -37,10 +29,8 @@ export async function requestNotificationPermission(): Promise<boolean> {
 }
 
 // Subscribe to push notifications
-async function subscribeToPushNotifications(): Promise<boolean> {
+export async function subscribeToPushNotifications(registration: ServiceWorkerRegistration): Promise<boolean> {
   try {
-    const registration = await navigator.serviceWorker.ready;
-    
     // Get the server's public key
     const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
     
@@ -57,13 +47,16 @@ async function subscribeToPushNotifications(): Promise<boolean> {
     // Check for existing subscription first
     let subscription = await registration.pushManager.getSubscription();
     
-    if (!subscription) {
-      // Create a new subscription
-      subscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey
-      });
+    if (subscription) {
+      console.log('[PWA] Push notification subscription already exists');
+      return true;
     }
+
+    // Create a new subscription
+    subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey
+    });
     
     // Send the subscription to the server
     const response = await fetch('/api/push/subscribe', {
@@ -75,14 +68,14 @@ async function subscribeToPushNotifications(): Promise<boolean> {
     });
     
     if (!response.ok) {
-      console.error('Failed to register push subscription on server');
+      console.error('[PWA] Failed to register push subscription on server');
       return false;
     }
     
-    console.log('Push notification subscription successful');
+    console.log('[PWA] Push notification subscription successful');
     return true;
   } catch (error) {
-    console.error('Error subscribing to push notifications:', error);
+    console.error('[PWA] Error subscribing to push notifications:', error);
     return false;
   }
 }
