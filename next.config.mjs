@@ -1,5 +1,4 @@
 import withPWA from 'next-pwa';
-import runtimeCaching from 'next-pwa/cache.js';
 
 const nextConfig = {
   reactStrictMode: true,
@@ -11,7 +10,7 @@ export default withPWA({
   register: true,
   skipWaiting: true,
   disable: process.env.NODE_ENV === 'development',
-  runtimeCaching,
+  swSrc: 'public/sw.js',
   buildExcludes: [
     // Default exclusions
     'app-build-manifest.json',
