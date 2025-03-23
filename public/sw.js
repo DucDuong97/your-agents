@@ -2,6 +2,9 @@
 
 const CACHE = "pwabuilder-offline-page";
 
+// Include this line for next-pwa to inject the precache manifest
+const precacheManifest = self.__WB_MANIFEST || [];
+
 // TODO: replace the following with the correct offline fallback page i.e.: const offlineFallbackPage = "offline.html";
 const offlineFallbackPage = "offline.html";
 
@@ -22,7 +25,7 @@ self.addEventListener('install', (event) => {
     caches.open(CACHE).then(function (cache) {
       console.log("[PWA Builder] Cached offline page during install");
       
-      // Use Promise.allSettled instead of addAll to handle failed requests gracefully
+      // Combine both the manifest and our additional URLs
       const urlsToCache = [
         offlineFallbackPage,
         '/',
@@ -38,8 +41,11 @@ self.addEventListener('install', (event) => {
         '/icons/icon-512x512.png'
       ];
       
+      // Add the precacheManifest URLs to our urlsToCache
+      const allUrlsToCache = [...precacheManifest.map(item => item.url), ...urlsToCache];
+      
       return Promise.allSettled(
-        urlsToCache.map(url => {
+        allUrlsToCache.map(url => {
           return fetch(url)
             .then(response => {
               // Only cache successful responses
