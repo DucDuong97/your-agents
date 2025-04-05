@@ -46,6 +46,36 @@ export const saveGlobalConfig = (config: GlobalConfig): void => {
   }
 };
 
+// Set up listener for API key requests from the service worker
+export const setupServiceWorkerMessageListener = (): void => {
+  if (!isBrowser() || !navigator.serviceWorker) {
+    return;
+  }
+  
+  // Set up the message listener
+  navigator.serviceWorker.addEventListener('message', (event) => {
+    // Check if this is an API key request
+    if (event.data && event.data.type === 'API_KEYS_REQUEST') {
+      console.log('[Storage] Received API key request from service worker');
+      
+      // Get the API keys from localStorage
+      const config = getGlobalConfig();
+      
+      // Send the keys back via the message channel
+      if (event.ports && event.ports[0]) {
+        event.ports[0].postMessage({
+          type: 'API_KEYS_RESPONSE',
+          openaiKey: config.openaiApiKey,
+          openrouterKey: config.openrouterApiKey
+        });
+        console.log('[Storage] Sent API keys to service worker');
+      }
+    }
+  });
+  
+  console.log('[Storage] Set up service worker message listener');
+};
+
 // User Activity Tracking
 export const getUserActivity = (): UserActivity => {
   if (!isBrowser()) {

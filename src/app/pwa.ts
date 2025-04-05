@@ -1,12 +1,17 @@
 'use client';
 
 import { subscribeToPushNotifications } from '@/utils/pushNotifications';
+import { setupServiceWorkerMessageListener } from '@/lib/storage';
 
 // Function to register the service worker
 export function registerServiceWorker() {
   console.log('[PWA] Registering service worker:', 'serviceWorker' in navigator);
   if ('serviceWorker' in navigator) {
     console.log('[PWA] Loading service worker');
+    
+    // Set up message listener for API key requests
+    setupServiceWorkerMessageListener();
+    
     navigator.serviceWorker.register('/sw.js')
       .then(async (registration) => {
         console.log('[PWA] Service Worker registered with scope:', registration.scope);

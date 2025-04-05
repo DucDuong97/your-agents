@@ -315,25 +315,77 @@ async function updateAgentLastSent(agentId) {
   }
 }
 
-// Helper function to generate a reminder message
-async function generateReminderMessage(agent) {
-  // Hard-coded API key for OpenAI
-  const OPENAI_API_KEY = 'sk-REDACTED';
-  
-  const currentHour = new Date().getHours();
-  let timeContext = '';
-  
-  if (currentHour >= 5 && currentHour < 12) {
-    timeContext = 'morning';
-  } else if (currentHour >= 12 && currentHour < 17) {
-    timeContext = 'afternoon';
-  } else if (currentHour >= 17 && currentHour < 22) {
-    timeContext = 'evening';
-  } else {
-    timeContext = 'night';
-  }
+// Helper function to request API keys from the main application
+async function requestApiKeys() {
+  console.log('[Service Worker] Requesting API keys');
   
   try {
+    // Get all clients controlled by this service worker
+    const clientList = await clients.matchAll({ type: 'window', includeUncontrolled: false });
+    
+    if (clientList.length === 0) {
+      console.error('No active clients to request API keys from');
+      return null;
+    }
+    
+    // Create a message channel for the response
+    const messageChannel = new MessageChannel();
+    
+    // Create a promise that will be resolved when we get a response
+    const keysPromise = new Promise((resolve) => {
+      messageChannel.port1.onmessage = (event) => {
+        if (event.data && event.data.type === 'API_KEYS_RESPONSE') {
+          resolve(event.data);
+        } else {
+          resolve(null);
+        }
+      };
+    });
+    
+    // Send the request to the first client
+    clientList[0].postMessage({
+      type: 'API_KEYS_REQUEST'
+    }, [messageChannel.port2]);
+    
+    // Wait for the response with a timeout
+    const timeoutPromise = new Promise((resolve) => {
+      setTimeout(() => resolve(null), 3000);
+    });
+    
+    // Return either the keys or null if timeout
+    return Promise.race([keysPromise, timeoutPromise]);
+  } catch (error) {
+    console.error('Error requesting API keys:', error);
+    return null;
+  }
+}
+
+// Helper function to generate a reminder message
+async function generateReminderMessage(agent) {
+  try {
+    // Request API key from main application
+    const apiKeys = await requestApiKeys();
+    const OPENAI_API_KEY = apiKeys?.openaiKey || '';
+    
+    // If we couldn't get an API key, use a fallback message
+    if (!OPENAI_API_KEY) {
+      console.error('OpenAI API key not available');
+      return `Hello! ${agent.name} here. I'd like to help you today but I'm having trouble with my connection. Please check your API settings.`;
+    }
+    
+    const currentHour = new Date().getHours();
+    let timeContext = '';
+    
+    if (currentHour >= 5 && currentHour < 12) {
+      timeContext = 'morning';
+    } else if (currentHour >= 12 && currentHour < 17) {
+      timeContext = 'afternoon';
+    } else if (currentHour >= 17 && currentHour < 22) {
+      timeContext = 'evening';
+    } else {
+      timeContext = 'night';
+    }
+    
     // Get the task prompt if available
     const taskPrompt = agent.scheduledNotifications?.taskPrompt || '';
     
@@ -390,7 +442,6 @@ async function generateReminderMessage(agent) {
     
     // Fallback message if API call fails
     return error.message;
-    return `It's ${timeContext} time! ${agent.name} is ready to help you with your tasks. What would you like to work on today?`;
   }
 }
 
