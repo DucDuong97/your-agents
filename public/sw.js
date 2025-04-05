@@ -299,6 +299,7 @@ async function updateAgentLastSent(agentId) {
       scheduledNotifications: {
         enabled: agent.scheduledNotifications?.enabled || true,
         time: agent.scheduledNotifications?.time || '09:00',
+        taskPrompt: agent.scheduledNotifications?.taskPrompt || '',
         lastSent: new Date().toISOString()
       },
       updatedAt: new Date().toISOString()
@@ -333,13 +334,14 @@ async function generateReminderMessage(agent) {
   }
   
   try {
-    // Get the system prompt from agent, or use a default if not available
-    const systemPrompt = agent.systemPrompt || `I am ${agent.name}, an AI assistant.`;
+    // Get the task prompt if available
+    const taskPrompt = agent.scheduledNotifications?.taskPrompt || '';
     
     // Craft a prompt for OpenAI that will generate an action-oriented reminder
     const prompt = `
-      You are ${agent.name}. 
-      System context: ${systemPrompt}
+      You are ${agent.name}.
+      
+      ${taskPrompt ? `Task description: ${taskPrompt}` : ''}
       
       It's ${timeContext} time. Create a brief, engaging reminder message that:
       1. Feels like it comes from the agent's persona

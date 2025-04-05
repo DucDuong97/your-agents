@@ -29,6 +29,7 @@ export default function AgentModal({ initialAgent, onSubmit, onClose }: AgentMod
       scheduledNotifications: initialAgent.scheduledNotifications || {
         enabled: false,
         time: '07:00',
+        taskPrompt: '',
         lastSent: undefined
       }
     } : {
@@ -41,6 +42,7 @@ export default function AgentModal({ initialAgent, onSubmit, onClose }: AgentMod
       scheduledNotifications: {
         enabled: false,
         time: '07:00',
+        taskPrompt: '',
         lastSent: undefined
       }
     },
@@ -148,6 +150,7 @@ export default function AgentModal({ initialAgent, onSubmit, onClose }: AgentMod
     const currentSettings = watch('scheduledNotifications') || {
       enabled: false,
       time: '07:00',
+      taskPrompt: '',
       lastSent: undefined
     };
     setValue('scheduledNotifications', {
@@ -298,8 +301,26 @@ export default function AgentModal({ initialAgent, onSubmit, onClose }: AgentMod
                   </div>
 
                   {watch('scheduledNotifications.enabled') && (
-                    <div className="ml-6 text-sm text-gray-500 dark:text-gray-400">
-                      You will receive a message from {watch('name')} every day at 7 AM.
+                    <div className="ml-6 mt-2 space-y-2">
+                      <div className="text-sm text-gray-500 dark:text-gray-400">
+                        You will receive a message from {watch('name')} every day at 7 AM.
+                      </div>
+                      
+                      <div className="mt-2">
+                        <label htmlFor="taskPrompt" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                          Task Description
+                        </label>
+                        <textarea
+                          {...register('scheduledNotifications.taskPrompt')}
+                          id="taskPrompt"
+                          className="w-full p-2 text-sm border border-gray-300 dark:border-gray-600 rounded-md focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+                          placeholder="Describe what this agent should remind you about (e.g., 'Remind me to exercise' or 'Help me plan my day')"
+                          rows={3}
+                        />
+                        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                          This description will be used to personalize the daily notifications.
+                        </p>
+                      </div>
                     </div>
                   )}
                 </div>

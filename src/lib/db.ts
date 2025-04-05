@@ -39,6 +39,7 @@ export interface ChatAgent {
   scheduledNotifications?: {
     enabled: boolean;
     time: string; // Format: "HH:mm" (24-hour)
+    taskPrompt?: string; // Custom prompt for scheduled notifications
     lastSent?: string; // ISO date string
   };
   createdAt: string;
