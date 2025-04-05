@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import PWARegister from "@/components/PWARegister";
-import StorageMigration from "@/components/StorageMigration";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -69,7 +68,6 @@ export default function RootLayout({
         <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
           {children}
           <PWARegister />
-          <StorageMigration />
         </div>
       </body>
     </html>

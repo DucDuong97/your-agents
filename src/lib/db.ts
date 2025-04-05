@@ -159,51 +159,6 @@ async function deleteItem(storeName: string, id: string): Promise<boolean> {
   });
 }
 
-// Migration utility to move data from localStorage to IndexedDB
-export async function migrateFromLocalStorage(): Promise<void> {
-  if (typeof window === 'undefined') return;
-  
-  try {
-    // Check if migration is needed
-    const migrationCompleted = localStorage.getItem('indexedDBMigrationCompleted');
-    if (migrationCompleted === 'true') {
-      console.log('Migration already completed');
-      return;
-    }
-    
-    // Migrate chats
-    const chatsJson = localStorage.getItem('chats');
-    if (chatsJson) {
-      const chats = JSON.parse(chatsJson);
-      if (Array.isArray(chats)) {
-        for (const chat of chats) {
-          await addItem(STORES.CHATS, chat);
-        }
-        console.log(`Migrated ${chats.length} chats from localStorage to IndexedDB`);
-      }
-    }
-    
-    // Migrate agents
-    const agentsJson = localStorage.getItem('agents');
-    if (agentsJson) {
-      const agents = JSON.parse(agentsJson);
-      if (Array.isArray(agents)) {
-        for (const agent of agents) {
-          await addItem(STORES.AGENTS, agent);
-        }
-        console.log(`Migrated ${agents.length} agents from localStorage to IndexedDB`);
-      }
-    }
-    
-    // Mark migration as completed
-    localStorage.setItem('indexedDBMigrationCompleted', 'true');
-    console.log('Migration from localStorage to IndexedDB completed successfully');
-  } catch (error) {
-    console.error('Error during migration from localStorage to IndexedDB:', error);
-    throw error;
-  }
-}
-
 // Client-side storage operations for chats
 export const chatDB = {
   async create(data: Omit<Chat, 'id' | 'createdAt' | 'updatedAt'>): Promise<Chat> {
