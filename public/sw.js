@@ -318,7 +318,7 @@ async function updateAgentLastSent(agentId) {
 // Helper function to request API keys from the main application
 async function requestApiKeys() {
   console.log('[Service Worker] Requesting API keys');
-  
+
   try {
     // Get all clients controlled by this service worker
     const clientList = await clients.matchAll({ type: 'window', includeUncontrolled: false });
@@ -391,17 +391,16 @@ async function generateReminderMessage(agent) {
     
     // Craft a prompt for OpenAI that will generate an action-oriented reminder
     const prompt = `
-      You are ${agent.name}.
+      You are a ${agent.name}.
       
-      ${taskPrompt ? `Task description: ${taskPrompt}` : ''}
+      ${taskPrompt ? `# Task description: ${taskPrompt}` : ''}
+
+      First, kindly greet the user related to the time of day: ${timeContext}.
       
-      It's ${timeContext} time. Create a brief, engaging reminder message that:
-      1. Feels like it comes from the agent's persona
-      2. Contains a specific call-to-action based on the agent's role and purpose
-      3. Is friendly and motivating
-      4. Mentions a practical next step the user could take
-      
-      Just provide the message text directly with no additional formatting.
+      Then, create a brief, engaging reminder message that:
+      1. Contains a specific call-to-action based on the agent's role and the # Task description
+      2. Mentions a practical next step the user could take
+      3. The call-to-action should be broken down into feasible steps
     `;
     
     // Call OpenAI API
