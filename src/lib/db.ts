@@ -42,6 +42,8 @@ export interface ChatAgent {
     taskPrompt?: string; // Custom prompt for scheduled notifications
     lastSent?: string; // ISO date string
   };
+  /** If enabled, this agent can use the local MySQL MCP server (see `mcp/sql.js`). */
+  useMysqlMcp?: boolean;
   createdAt: string;
   updatedAt: string;
 }

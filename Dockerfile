@@ -16,9 +16,10 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# Set default values for environment variables
-ARG NEXT_PUBLIC_VAPID_PUBLIC_KEY=BGYqmeGbAz7IEUsSA9r_6miH0P-XpfXqUHaX93z7y84b9sbkNpgR1VyG74alIrc_AwYfA1zCHC1euKa11iBLtbo
-ARG VAPID_PRIVATE_KEY=wquSNlo4WaPUltOUx2mXq-KOhQEOheA-vi_fdsoTnvc
+# Build-time environment variables (pass these via --build-arg)
+ARG NEXT_PUBLIC_VAPID_PUBLIC_KEY=
+ARG VAPID_PRIVATE_KEY=
+ARG VAPID_SUBJECT=mailto:dmd@steadyapp.dev
 ARG NEXT_PUBLIC_APP_URL=http://localhost:3000
 
 # Set environment variables for build
@@ -26,6 +27,7 @@ ENV NODE_ENV production
 ENV NEXT_TELEMETRY_DISABLED 1
 ENV NEXT_PUBLIC_VAPID_PUBLIC_KEY=${NEXT_PUBLIC_VAPID_PUBLIC_KEY}
 ENV VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY}
+ENV VAPID_SUBJECT=${VAPID_SUBJECT}
 ENV NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL}
 
 # Build the application
@@ -41,6 +43,7 @@ ENV NEXT_TELEMETRY_DISABLED 1
 # Set runtime environment variables
 ENV NEXT_PUBLIC_VAPID_PUBLIC_KEY=${NEXT_PUBLIC_VAPID_PUBLIC_KEY}
 ENV VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY}
+ENV VAPID_SUBJECT=${VAPID_SUBJECT}
 ENV NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL}
 
 # Create a non-root user to run the app

@@ -57,7 +57,8 @@ export default function AgentImport({ onClose, onImportSuccess }: AgentImportPro
             modelName: agentData.modelName,
             provider: agentData.provider as 'openrouter' | 'openai',
             examplePrompts,
-            oneShotExample: agentData.oneShotExample || ''
+            oneShotExample: agentData.oneShotExample || '',
+            useMysqlMcp: Boolean(agentData.useMysqlMcp),
           });
           
           importedCount++;

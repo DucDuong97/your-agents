@@ -1,21 +1,12 @@
 import { NextResponse } from 'next/server';
-import webpush from 'web-push';
 import { query } from '@/lib/server/db';
-
-// Generate VAPID keys using web-push generate-vapid-keys
-const vapidKeys = {
-  publicKey: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || '',
-  privateKey: process.env.VAPID_PRIVATE_KEY || ''
-};
-
-webpush.setVapidDetails(
-  'mailto:dmd@steadyapp.dev',
-  vapidKeys.publicKey,
-  vapidKeys.privateKey
-);
+import { ensureWebPushConfigured } from '@/lib/server/webpush';
 
 export async function POST(request: Request) {
   try {
+    // Ensure env is present and web-push is configured (even if this route doesn't send)
+    ensureWebPushConfigured();
+
     const subscription = await request.json();
     
     if (!subscription) {

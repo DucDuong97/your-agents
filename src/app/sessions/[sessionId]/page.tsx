@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useParams } from 'next/navigation';
 import { chatDB, agentDB, Chat as ChatType, ChatAgent, Message } from '@/lib/db';
@@ -9,39 +9,118 @@ import MessageInput from '@/components/chat/MessageInput';
 import EmptyState from '@/components/chat/EmptyState';
 import { useForm } from 'react-hook-form';
 import { generateChatCompletion, ApiMessage } from '@/lib/openrouter-client';
-import { getGlobalConfig } from '@/lib/storage';
+import { getGlobalConfig, trackMessageSent } from '@/lib/storage';
 import { generateChatTitle } from '@/lib/promptUtils';
 import { ArrowLeft, Home, Edit } from 'lucide-react';
 import AgentModal from '@/components/chat/AgentModal';
-import { getModels, getModelById } from '@/lib/modelUtils';
-import { trackMessageSent } from '@/lib/storage';
+import { convertImageToBase64, supportsImages } from '@/lib/imageUtils';
+import { useApiKey } from '@/hooks/useApiKey';
+import { calculateChatCompletionPrice } from '@/lib/costUtils';
+import { orchestratorAgent } from '@/agents/orchestrator';
 
-interface ChatState {
-  messages: Message[];
-  selectedAgent: ChatAgent | null;
-  currentChat: ChatType | null;
-  isGenerating: boolean;
-  isTitleGenerating: boolean;
-  streamingContent: string | null;
+async function buildUserMessage(data: { message: string; image?: File }): Promise<Message> {
+  let contentForDisplay = data.message;
+  let rawContent: string | undefined;
+
+  if (data.image) {
+    const base64Image = await convertImageToBase64(data.image);
+
+    // For display in the UI, we'll use markdown format
+    contentForDisplay = `${data.message}\n\n![Uploaded Image](${base64Image})`;
+
+    // For the API, store the structured content format in a special field
+    rawContent = JSON.stringify([
+      {
+        type: 'text',
+        text: data.message,
+      },
+      {
+        type: 'image_url',
+        image_url: {
+          url: `data:${data.image.type};base64,${base64Image.split(',')[1]}`,
+        },
+      },
+    ]);
+  }
+
+  return {
+    id: Date.now().toString(),
+    role: 'user',
+    content: contentForDisplay,
+    createdAt: new Date().toISOString(),
+    rawContent,
+  };
 }
 
 export default function SessionPage() {
   const router = useRouter();
   const params = useParams();
   const sessionId = params.sessionId as string;
+  const titleGeneratedForChatRef = useRef<string | null>(null);
   
-  const [state, setState] = useState<ChatState>({
-    messages: [],
-    selectedAgent: null,
-    currentChat: null,
-    isGenerating: false,
-    isTitleGenerating: false,
-    streamingContent: null,
-  });
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [selectedAgent, setSelectedAgent] = useState<ChatAgent | null>(null);
+  const [currentChat, setCurrentChat] = useState<ChatType | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [isTitleGenerating, setIsTitleGenerating] = useState(false);
+  const [streamingContent, setStreamingContent] = useState<string | null>(null);
   
   const { register, handleSubmit, reset, setValue } = useForm<{ message: string; image?: File }>();
   const [loading, setLoading] = useState(true);
   const [showAgentModal, setShowAgentModal] = useState(false);
+
+  // Check if API key is available for the selected provider
+  const { getApiKeyForAgentOrRedirect } = useApiKey();
+  const apiKey = getApiKeyForAgentOrRedirect(selectedAgent);
+
+  const buildApiMessages = useCallback((messagesForApi: Message[]): ApiMessage[] => {
+    if (!selectedAgent) return [];
+
+    const apiMessages: ApiMessage[] = [];
+
+    // Get user information from global config
+    const { userNickname, userJobTitle } = getGlobalConfig();
+
+    // Add the system prompt first
+    const systemPrompt = selectedAgent.oneShotExample
+      ? `${selectedAgent.systemPrompt}\n\n${selectedAgent.oneShotExample}`
+      : selectedAgent.systemPrompt;
+    let enhancedSystemPrompt = systemPrompt;
+
+    // Add user information to the system prompt if available
+    if (userNickname && userJobTitle) {
+      const userInfoPrompt = `\n\nYou are chatting with ${userNickname}, who works as a ${userJobTitle}.`;
+      enhancedSystemPrompt = `${systemPrompt}${userInfoPrompt}`;
+    }
+
+    apiMessages.push({
+      role: 'system',
+      content: enhancedSystemPrompt,
+    });
+
+    // Add the chat history
+    for (const msg of messagesForApi) {
+      // Skip system messages as we already added our enhanced system prompt
+      if (msg.role === 'system') continue;
+
+      // Handle messages with images
+      if (msg.rawContent && msg.role === 'user') {
+        // If the message has structured content (for images), use it
+        apiMessages.push({
+          role: msg.role,
+          content: JSON.parse(msg.rawContent),
+        });
+      } else {
+        // Otherwise use the regular content
+        apiMessages.push({
+          role: msg.role,
+          content: msg.content,
+        });
+      }
+    }
+
+    return apiMessages;
+  }, [selectedAgent]);
   
   // Load chat and agent data
   useEffect(() => {
@@ -66,27 +145,18 @@ export default function SessionPage() {
           const updatedChat = await chatDB.markAsRead(chat.id);
           if (updatedChat) {
             // Use the updated chat
-            setState(prev => ({
-              ...prev,
-              currentChat: updatedChat,
-              messages: updatedChat.messages,
-              selectedAgent: agent,
-            }));
+            setCurrentChat(updatedChat);
+            setMessages(updatedChat.messages);
+            setSelectedAgent(agent);
           } else {
-            setState(prev => ({
-              ...prev,
-              currentChat: chat,
-              messages: chat.messages,
-              selectedAgent: agent,
-            }));
+            setCurrentChat(chat);
+            setMessages(chat.messages);
+            setSelectedAgent(agent);
           }
         } else {
-          setState(prev => ({
-            ...prev,
-            currentChat: chat,
-            messages: chat.messages,
-            selectedAgent: agent,
-          }));
+          setCurrentChat(chat);
+          setMessages(chat.messages);
+          setSelectedAgent(agent);
         }
       } catch (error) {
         console.error('Failed to load chat data:', error);
@@ -97,242 +167,172 @@ export default function SessionPage() {
     
     loadChatData();
   }, [sessionId, router]);
+
+  // Generate a title for the chat if it doesn't have one
+  useEffect(() => {
+    const maybeGenerateTitle = async () => {
+      if (!currentChat || !selectedAgent) return;
+      if (isTitleGenerating) return;
+
+      const placeholderTitle = `New chat with ${selectedAgent.name}`;
+      if (currentChat.title !== placeholderTitle) return;
+
+      const userMessages = messages.filter(msg => msg.role === 'user');
+      const assistantMessages = messages.filter(msg => msg.role === 'assistant');
+      if (userMessages.length !== 1) return;
+      if (assistantMessages.length > 0) return;
+
+      if (titleGeneratedForChatRef.current === currentChat.id) return;
+
+      // Mark as attempted so we don't spam title generation on re-renders
+      titleGeneratedForChatRef.current = currentChat.id;
+
+      const firstUserMessage = userMessages[0];
+      const firstMessageText = (() => {
+        if (firstUserMessage.rawContent) {
+          try {
+            const parsed: unknown = JSON.parse(firstUserMessage.rawContent);
+            if (Array.isArray(parsed)) {
+              const textParts = parsed
+                .map((item: unknown) => {
+                  if (!item || typeof item !== 'object') return '';
+                  const maybeType = (item as { type?: unknown }).type;
+                  if (maybeType !== 'text') return '';
+                  const maybeText = (item as { text?: unknown }).text;
+                  return typeof maybeText === 'string' ? maybeText : '';
+                })
+                .join(' ')
+                .trim();
+              if (textParts) return textParts;
+            }
+          } catch {
+            // Fall back below
+          }
+        }
+
+        // Avoid including giant image data URLs from markdown embeds
+        return firstUserMessage.content.replace(/!\[[^\]]*\]\([^)]+\)/g, '').trim();
+      })();
+
+      try {
+        setIsTitleGenerating(true);
+
+        const title = await generateChatTitle(
+          firstMessageText,
+          selectedAgent.provider,
+          apiKey!
+        );
+
+        await chatDB.update(currentChat.id, { title });
+
+        // Update local state immediately so header reflects new title without reload
+        setCurrentChat(prev => (prev ? { ...prev, title } : prev));
+      } catch (error) {
+        console.error('Error generating chat title:', error);
+      } finally {
+        setIsTitleGenerating(false);
+      }
+    };
+
+    void maybeGenerateTitle();
+  }, [
+    currentChat,
+    selectedAgent,
+    messages,
+    isTitleGenerating,
+    apiKey,
+  ]);
   
   const onSendMessage = async (data: { message: string; image?: File }) => {
-    if ((!data.message.trim() && !data.image) || state.isGenerating) return;
+    if ((!data.message.trim() && !data.image) || isGenerating) return;
     
     // Check if agent is selected
-    if (!state.selectedAgent || !state.currentChat) {
+    if (!selectedAgent || !currentChat) {
       router.push('/home');
       return;
-    }
-    
-    // Check if API key is available for the selected provider
-    const config = getGlobalConfig();
-    const apiKey = state.selectedAgent.provider === 'openrouter' 
-      ? config.openrouterApiKey 
-      : config.openaiApiKey;
-      
-    if (!apiKey) {
-      router.push('/home');
-      return;
-    }
-    
-    let messageContent = data.message;
-    let contentForDisplay = data.message;
-    
-    // If there's an image, convert it to base64 and prepare it for display and API
-    if (data.image) {
-      try {
-        const base64Image = await convertImageToBase64(data.image);
-        
-        // For display in the UI, we'll use markdown format
-        contentForDisplay = `${data.message}\n\n![Uploaded Image](${base64Image})`;
-        
-        // For the API, we'll store the structured content format in a special field
-        // This will be processed when sending to the API
-        messageContent = JSON.stringify([
-          {
-            "type": "text",
-            "text": data.message
-          },
-          {
-            "type": "image_url",
-            "image_url": {
-              "url": `data:${data.image.type};base64,${base64Image.split(',')[1]}`
-            }
-          }
-        ]);
-      } catch (error) {
-        console.error('Error processing image:', error);
-        alert('Failed to process the image. Please try again.');
-        return;
-      }
-    }
-    
-    // Track this message for streak counting
-    trackMessageSent();
-    
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      role: 'user',
-      content: contentForDisplay,
-      createdAt: new Date().toISOString(),
-      rawContent: data.image ? messageContent : undefined
-    };
-    
-    // Add message to current chat
-    const updatedMessages = [...state.messages, userMessage];
-    
-    setState(prevState => ({
-      ...prevState,
-      messages: updatedMessages,
-      isGenerating: true,
-      streamingContent: '',
-    }));
-    
-    // Update the chat in the database
-    await chatDB.update(state.currentChat.id, { 
-      messages: updatedMessages,
-    });
-    
-    // Check if this is the first user message and generate a title if needed
-    const isFirstUserMessage = state.messages.filter(msg => msg.role === 'user').length === 0;
-    
-    if (isFirstUserMessage) {
-      setState(prevState => ({
-        ...prevState,
-        isTitleGenerating: true,
-      }));
-      
-      // Generate title in the background
-      generateChatTitle(
-        data.message,
-        state.selectedAgent.provider,
-        apiKey
-      ).then(title => {
-        // Update chat title in the database
-        chatDB.update(state.currentChat!.id, { title });
-      }).catch(error => {
-        console.error('Error generating chat title:', error);
-      }).finally(() => {
-        setState(prevState => ({
-          ...prevState,
-          isTitleGenerating: false,
-        }));
-      });
     }
     
     // Reset the form after sending
     reset();
     
+    // Track this message for streak counting
+    trackMessageSent();
+    
+    let userMessage: Message;
     try {
-      // Convert API messages from the current chat
-      const apiMessages: ApiMessage[] = [];
-      
-      // Get user information from global config
-      const { userNickname, userJobTitle } = getGlobalConfig();
-      
-      // Add the system prompt first
-      const systemPrompt = state.selectedAgent.oneShotExample 
-        ? `${state.selectedAgent.systemPrompt}\n\n${state.selectedAgent.oneShotExample}` 
-        : state.selectedAgent.systemPrompt;
-      let enhancedSystemPrompt = systemPrompt;
-      
-      // Add user information to the system prompt if available
-      if (userNickname && userJobTitle) {
-        const userInfoPrompt = `\n\nYou are chatting with ${userNickname}, who works as a ${userJobTitle}.`;
-        enhancedSystemPrompt = `${systemPrompt}${userInfoPrompt}`;
-      }
-      
-      apiMessages.push({
-        role: 'system',
-        content: enhancedSystemPrompt
-      });
-      
-      // Add the chat history
-      for (const msg of updatedMessages) {
-        // Skip system messages as we already added our enhanced system prompt
-        if (msg.role === 'system') continue;
-        
-        // Handle messages with images
-        if (msg.rawContent && msg.role === 'user') {
-          // If the message has structured content (for images), use it
-          apiMessages.push({
-            role: msg.role,
-            content: JSON.parse(msg.rawContent)
+      userMessage = await buildUserMessage(data);
+    } catch (error) {
+      console.error('Error processing image:', error);
+      alert('Failed to process the image. Please try again.');
+      return;
+    }
+    
+    // Add message to current chat
+    const updatedMessages = [...messages, userMessage];
+    
+    setMessages(updatedMessages);
+    
+    // Update the chat in the database
+    await chatDB.update(currentChat.id, { 
+      messages: updatedMessages,
+    });
+
+    setIsGenerating(true);
+    setStreamingContent('');
+    
+    try {
+      let apiMessages = buildApiMessages(updatedMessages);
+
+      // Optional: orchestrate MySQL MCP tool calls and inject results as a synthetic system message
+      if (selectedAgent.useMysqlMcp) {
+        try {
+          const { toolSystemMessage } = await orchestratorAgent({
+            apiMessages,
+            agent: selectedAgent,
+            apiKey: apiKey!,
           });
-        } else {
-          // Otherwise use the regular content
-          apiMessages.push({
-            role: msg.role,
-            content: msg.content
-          });
+
+          if (toolSystemMessage) {
+            apiMessages = [apiMessages[0], toolSystemMessage, ...apiMessages.slice(1)];
+          }
+        } catch (e) {
+          console.warn('MySQL MCP orchestration failed; continuing without tools:', e);
         }
       }
       
       const response = await generateChatCompletion({
         messages: apiMessages,
-        model: state.selectedAgent.modelName,
-        apiKey,
-        provider: state.selectedAgent.provider,
+        model: selectedAgent.modelName,
+        apiKey: apiKey!,
+        provider: selectedAgent.provider,
         onUpdate: (content) => {
-          setState(prevState => ({
-            ...prevState,
-            streamingContent: content
-          }));
+          setStreamingContent(content);
         }
       });
-      
-      // Calculate price based on token usage and model pricing
-      const modelInfo = getModelById(state.selectedAgent.modelName);
-      const pricing = modelInfo?.pricing || { prompt: 0, completion: 0, image: 0 };
-      
-      // Use actual token counts from API response if available, otherwise estimate
-      let promptTokens, completionTokens;
-      
-      if (response.usage) {
-        // Use actual token counts from API
-        promptTokens = response.usage.prompt_tokens;
-        completionTokens = response.usage.completion_tokens;
-      } else {
-        // Estimate token count (rough approximation)
-        const promptText = apiMessages.map(msg => 
-          typeof msg.content === 'string' ? msg.content : 
-          Array.isArray(msg.content) ? 
-            msg.content.filter(item => item.type === 'text').map(item => item.text).join(' ') : 
-            ''
-        ).join(' ');
-        const completionText = response.content;
-        
-        // Rough estimate: ~4 chars per token
-        promptTokens = Math.ceil(promptText.length / 4);
-        completionTokens = Math.ceil(completionText.length / 4);
-      }
-      
-      // Count images in the conversation
-      const imageCount = apiMessages.reduce((count, msg) => {
-        if (Array.isArray(msg.content)) {
-          return count + msg.content.filter(item => item.type === 'image_url').length;
-        }
-        return count;
-      }, 0);
-      
-      // Calculate total cost in USD (convert from price per million tokens)
-      const promptCost = (promptTokens / 1000000) * (pricing.prompt || 0);
-      const completionCost = (completionTokens / 1000000) * (pricing.completion || 0);
-      const imageCost = imageCount * (pricing.image || 0);
-      const totalCost = promptCost + completionCost + imageCost;
-      
+
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
         content: response.content,
         createdAt: new Date().toISOString(),
-        price: {
-          promptTokens,
-          completionTokens,
-          imageCount,
-          totalCost,
-          promptCost,
-          completionCost,
-          imageCost
-        }
+        price: calculateChatCompletionPrice({
+          apiMessages,
+          response,
+          modelId: selectedAgent.modelName,
+        }),
       };
       
       const finalMessages = [...updatedMessages, assistantMessage];
       
-      setState(prevState => ({
-        ...prevState,
-        messages: finalMessages,
-        isGenerating: false,
-        streamingContent: null,
-      }));
+      setMessages(finalMessages);
       
       // Update the chat in the database
-      await chatDB.update(state.currentChat.id, { 
+      await chatDB.update(currentChat.id, { 
         messages: finalMessages,
       });
+
+      setIsGenerating(false);
+      setStreamingContent(null);
     } catch (error) {
       console.error('Error generating response:', error);
       
@@ -345,69 +345,35 @@ export default function SessionPage() {
       
       const finalMessages = [...updatedMessages, errorMessage];
       
-      setState(prevState => ({
-        ...prevState,
-        messages: finalMessages,
-        isGenerating: false,
-        streamingContent: null,
-      }));
-      
+      setMessages(finalMessages);
       // Update the chat in the database
-      await chatDB.update(state.currentChat.id, { 
+      await chatDB.update(currentChat.id, { 
         messages: finalMessages,
       });
+
+      setIsGenerating(false);
+      setStreamingContent(null);
     }
   };
   
-  // Helper function to convert an image file to base64
-  const convertImageToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (typeof reader.result === 'string') {
-          resolve(reader.result);
-        } else {
-          reject(new Error('Failed to convert image to base64'));
-        }
-      };
-      reader.onerror = () => {
-        reject(new Error('Failed to read image file'));
-      };
-      reader.readAsDataURL(file);
-    });
-  };
-  
-  // Check if the selected model supports images
-  const supportsImages = (): boolean => {
-    if (!state.selectedAgent) return false;
-    
-    const models = getModels(state.selectedAgent.provider);
-    const selectedModel = models.find(model => model.id === state.selectedAgent?.modelName);
-    
-    return selectedModel?.inputModalities?.includes('images') || false;
-  };
-  
   const handleClearChat = () => {
-    if (!state.currentChat) return;
+    if (!currentChat) return;
     
     if (confirm('Are you sure you want to clear this chat?')) {
       const clearedChat = {
-        ...state.currentChat,
+        ...currentChat,
         messages: [],
       };
       
-      chatDB.update(state.currentChat.id, { messages: [] });
+      chatDB.update(currentChat.id, { messages: [] });
       
-      setState(prevState => ({
-        ...prevState,
-        currentChat: clearedChat,
-        messages: [],
-      }));
+      setCurrentChat(clearedChat);
+      setMessages([]);
     }
   };
   
   const handleNavigateToSessions = () => {
-    router.push(`/agents/${state.selectedAgent?.id}`);
+    router.push(`/agents/${selectedAgent?.id}`);
   };
 
   const handleNavigateToHome = () => {
@@ -415,19 +381,16 @@ export default function SessionPage() {
   };
 
   const handleEditAgent = () => {
-    if (state.selectedAgent) {
+    if (selectedAgent) {
       setShowAgentModal(true);
     }
   };
   
   const handleAgentUpdate = async (agentData: Omit<ChatAgent, 'id' | 'createdAt' | 'updatedAt'>) => {
     try {
-      if (state.selectedAgent) {
-        const updatedAgent = await agentDB.update(state.selectedAgent.id, agentData);
-        setState(prevState => ({
-          ...prevState,
-          selectedAgent: updatedAgent
-        }));
+      if (selectedAgent) {
+        const updatedAgent = await agentDB.update(selectedAgent.id, agentData);
+        setSelectedAgent(updatedAgent);
         setShowAgentModal(false);
       }
     } catch (error) {
@@ -469,25 +432,25 @@ export default function SessionPage() {
             </div>
             <div className="min-w-0 flex-1 overflow-hidden">
               <h1 className="text-base sm:text-lg font-bold text-gray-800 dark:text-white truncate">
-                {state.currentChat?.title 
-                  ? (state.currentChat.title.length > 30 
-                    ? state.currentChat.title.substring(0, 30) + '...' 
-                    : state.currentChat.title)
+                {currentChat?.title 
+                  ? (currentChat.title.length > 30 
+                    ? currentChat.title.substring(0, 30) + '...' 
+                    : currentChat.title)
                   : 'AI Chat'}
-                {state.isTitleGenerating && (
+                {isTitleGenerating && (
                   <span className="ml-2 text-xs text-gray-500 dark:text-gray-400 animate-pulse">
                     ...
                   </span>
                 )}
               </h1>
-              {state.selectedAgent?.name && (
+              {selectedAgent?.name && (
                 <div className="flex items-center text-xs text-gray-500 dark:text-gray-400">
                   <span className="truncate max-w-[150px] sm:max-w-[200px]">
-                    {state.selectedAgent.name.length > 25 
-                      ? state.selectedAgent.name.substring(0, 25) + '...' 
-                      : state.selectedAgent.name}
+                    {selectedAgent.name.length > 25 
+                      ? selectedAgent.name.substring(0, 25) + '...' 
+                      : selectedAgent.name}
                   </span>
-                  {state.selectedAgent && (
+                  {selectedAgent && (
                     <button
                       onClick={handleEditAgent}
                       className="p-1 ml-1 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 rounded touch-manipulation"
@@ -515,18 +478,18 @@ export default function SessionPage() {
       
       <div className="flex-1 overflow-y-auto p-2 sm:p-4 md:p-6">
         <div className="max-w-3xl mx-auto">
-          {state.messages.length === 0 ? (
+          {messages.length === 0 ? (
             <EmptyState 
               onSendMessage={(content) => {
                 onSendMessage({ message: content });
               }} 
-              agent={state.selectedAgent}
+              agent={selectedAgent}
             />
           ) : (
             <MessageList 
-              messages={state.messages}
-              isGenerating={state.isGenerating}
-              streamingContent={state.streamingContent}
+              messages={messages}
+              isGenerating={isGenerating}
+              streamingContent={streamingContent}
             />
           )}
         </div>
@@ -538,16 +501,16 @@ export default function SessionPage() {
             onSubmit={handleSubmit(onSendMessage)}
             register={register}
             setValue={setValue}
-            isSubmitting={state.isGenerating}
-            supportsImages={supportsImages()}
+            isSubmitting={isGenerating}
+            supportsImages={supportsImages(selectedAgent)}
           />
         </div>
       </div>
       
       {/* Agent Modal */}
-      {showAgentModal && state.selectedAgent && (
+      {showAgentModal && selectedAgent && (
         <AgentModal
-          initialAgent={state.selectedAgent}
+          initialAgent={selectedAgent}
           onSubmit={handleAgentUpdate}
           onClose={() => setShowAgentModal(false)}
         />

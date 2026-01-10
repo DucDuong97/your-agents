@@ -3,19 +3,19 @@ import { query } from '@/lib/server/db';
 
 export async function POST(request: Request) {
   try {
-    const { deviceId } = await request.json();
+    const { endpoint } = await request.json();
     
-    if (!deviceId) {
+    if (!endpoint) {
       return NextResponse.json(
-        { error: 'Missing deviceId' },
+        { error: 'Missing endpoint' },
         { status: 400 }
       );
     }
 
     // Remove the subscription from the database
     await query(
-      `DELETE FROM push_subscriptions WHERE device_id = ?`,
-      [deviceId]
+      `DELETE FROM push_subscriptions WHERE endpoint = ?`,
+      [endpoint]
     );
     
     return NextResponse.json({ success: true });

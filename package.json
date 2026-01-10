@@ -2,15 +2,22 @@
   "name": "chat-bot",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=18.17.0 <23"
+  },
   "scripts": {
-    "dev": "next dev --turbopack --port 3002",
+    "dev": "next dev --turbopack --port 5000",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "mcp:mysql": "node mcp/sql.js",
+    "generate-vapid-keys": "node scripts/generate-vapid-keys.js",
     "generate-pwa-icons": "node scripts/generate-pwa-icons.js"
   },
   "dependencies": {
+    "dotenv": "^16.4.7",
     "@types/react-syntax-highlighter": "^15.5.13",
+    "@modelcontextprotocol/sdk": "^1.0.0",
     "date-fns": "^4.1.0",
     "lucide-react": "^0.479.0",
     "mysql2": "^3.14.0",

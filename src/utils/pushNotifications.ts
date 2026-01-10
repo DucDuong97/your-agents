@@ -37,12 +37,14 @@ export async function subscribeToPushNotifications(): Promise<boolean> {
     const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
     
     if (!publicKey) {
-      console.error('Missing VAPID public key');
+      console.error(
+        'Missing VAPID public key (NEXT_PUBLIC_VAPID_PUBLIC_KEY). Add it to .env.local and restart the dev server.'
+      );
       return false;
     }
     
-    // Convert the public key to Uint8Array
-    const applicationServerKey = urlBase64ToUint8Array(publicKey);
+    // Convert the public key to an ArrayBuffer (satisfies BufferSource typing in TS)
+    const applicationServerKey = urlBase64ToUint8Array(publicKey).buffer as ArrayBuffer;
     
     console.log('Subscribing to push notifications');
     
@@ -124,7 +126,9 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
     .replace(/_/g, '/');
 
   const rawData = window.atob(base64);
-  const outputArray = new Uint8Array(rawData.length);
+  // Create an ArrayBuffer explicitly to satisfy BufferSource typing (avoids ArrayBufferLike/SharedArrayBuffer mismatch)
+  const arrayBuffer = new ArrayBuffer(rawData.length);
+  const outputArray = new Uint8Array(arrayBuffer);
 
   for (let i = 0; i < rawData.length; ++i) {
     outputArray[i] = rawData.charCodeAt(i);

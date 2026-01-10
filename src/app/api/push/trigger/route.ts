@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
-import webpush from 'web-push';
 import { query } from '@/lib/server/db';
 import { RowDataPacket } from 'mysql2';
+import { ensureWebPushConfigured, webpush } from '@/lib/server/webpush';
 
 interface PushSubscriptionRow extends RowDataPacket {
   endpoint: string;
@@ -9,19 +9,10 @@ interface PushSubscriptionRow extends RowDataPacket {
   auth: string;
 }
 
-const vapidKeys = {
-  publicKey: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || '',
-  privateKey: process.env.VAPID_PRIVATE_KEY || ''
-};
-
-webpush.setVapidDetails(
-  'mailto:dmd@steadyapp.dev',
-  vapidKeys.publicKey,
-  vapidKeys.privateKey
-);
-
 export async function GET() {
   try {
+    ensureWebPushConfigured();
+
     // Fetch the subscription from the database
     const subscriptions = await query<PushSubscriptionRow[]>(
       `SELECT endpoint, p256dh, auth 

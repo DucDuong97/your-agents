@@ -87,7 +87,8 @@ export default function AgentSelector({ onSelectAgent }: AgentSelectorProps) {
       modelName: agent.modelName,
       provider: agent.provider,
       examplePrompts: agent.examplePrompts,
-      oneShotExample: agent.oneShotExample || ''
+      oneShotExample: agent.oneShotExample || '',
+      useMysqlMcp: agent.useMysqlMcp ?? false,
     };
     
     // Convert to JSON string with pretty formatting

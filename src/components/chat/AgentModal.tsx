@@ -31,7 +31,8 @@ export default function AgentModal({ initialAgent, onSubmit, onClose }: AgentMod
         time: '07:00',
         taskPrompt: '',
         lastSent: undefined
-      }
+      },
+      useMysqlMcp: initialAgent.useMysqlMcp ?? false,
     } : {
       name: '',
       systemPrompt: 'You are a helpful assistant.',
@@ -44,7 +45,8 @@ export default function AgentModal({ initialAgent, onSubmit, onClose }: AgentMod
         time: '07:00',
         taskPrompt: '',
         lastSent: undefined
-      }
+      },
+      useMysqlMcp: false,
     },
   });
 
@@ -233,6 +235,26 @@ export default function AgentModal({ initialAgent, onSubmit, onClose }: AgentMod
               />
               <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                 This prompt defines the agent&apos;s personality and capabilities.
+              </p>
+            </div>
+
+            <div className="mb-6">
+              <div className="flex items-center">
+                <input
+                  type="checkbox"
+                  id="useMysqlMcpToggle"
+                  {...register('useMysqlMcp')}
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                />
+                <label
+                  htmlFor="useMysqlMcpToggle"
+                  className="ml-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                >
+                  Allow this agent to use MySQL MCP
+                </label>
+              </div>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Enables access to the local MySQL MCP server tools (query/tables/describe) for this agent.
               </p>
             </div>
             
