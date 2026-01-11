@@ -32,6 +32,7 @@ export function useApiKey() {
 
   const getApiKeyForAgentOrRedirect = useCallback(
     (agent: ChatAgent | null | undefined, redirectTo = '/home'): string | null => {
+      if (!agent) return null;
       const apiKey = getApiKeyForAgent(agent);
       if (!apiKey) {
         router.push(redirectTo);

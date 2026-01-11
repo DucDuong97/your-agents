@@ -57,7 +57,10 @@ export class SqlMcpClient {
 
   constructor(options: SqlMcpClientOptions = {}) {
     this.baseUrl = (options.baseUrl ?? 'http://127.0.0.1:7071').replace(/\/+$/u, '');
-    this.fetchImpl = options.fetchImpl ?? fetch;
+    // Avoid "Illegal invocation" in browsers when storing `window.fetch` and later calling it
+    // as `this.fetchImpl(...)` (which would bind `this` to the client instance).
+    const impl = options.fetchImpl ?? globalThis.fetch;
+    this.fetchImpl = ((...args: Parameters<typeof fetch>) => impl(...args)) as typeof fetch;
   }
 
   /**
@@ -100,6 +103,7 @@ export class SqlMcpClient {
   }
 
   async listTools(): Promise<unknown> {
+    console.log("listTools");
     return await this.request('tools/list', {});
   }
 

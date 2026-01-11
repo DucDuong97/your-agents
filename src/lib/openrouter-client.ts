@@ -36,6 +36,7 @@ export interface ChatCompletionOptions {
   model: string;
   apiKey: string;
   provider: 'openrouter' | 'openai';
+  isStreaming?: boolean;
   onUpdate?: (content: string) => void;
 }
 
@@ -51,7 +52,7 @@ export interface ChatCompletionResponse {
 // Client-side function to generate chat completion
 export async function generateChatCompletion(options: ChatCompletionOptions): Promise<ChatCompletionResponse> {
   try {
-    const { messages, model, apiKey, provider, onUpdate } = options;
+    const { messages, model, apiKey, provider, isStreaming = false, onUpdate } = options;
 
     // Check if the model is an Anthropic Claude model or other models that use max_completion_tokens
     const usesMaxCompletionTokens = 
@@ -63,7 +64,7 @@ export async function generateChatCompletion(options: ChatCompletionOptions): Pr
     const requestBody = {
       model: model,
       messages: messages,
-      stream: true,
+      stream: isStreaming,
       ...(usesMaxCompletionTokens 
         ? { max_completion_tokens: 1000 } 
         : { temperature: 0.7, max_tokens: 1000 })
@@ -87,6 +88,14 @@ export async function generateChatCompletion(options: ChatCompletionOptions): Pr
         throw new Error(`OpenRouter API error: ${response.status} ${JSON.stringify(errorData)}`);
       }
 
+      if (!isStreaming) {
+        const data = await response.json();
+        return {
+          content: data.choices[0].message.content,
+          usage: data.usage,
+        };
+      }
+
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
       let completeContent = '';
@@ -103,8 +112,14 @@ export async function generateChatCompletion(options: ChatCompletionOptions): Pr
 
           for (const line of lines) {
             if (line.startsWith('data: ')) {
+              const content = line.slice(5);
+
+              if (content.includes('[DONE]')) {
+                break;
+              }
+
               try {
-                const data = JSON.parse(line.slice(5));
+                const data = JSON.parse(content);
                 if (data.choices?.[0]?.delta?.content) {
                   const newContent = data.choices[0].delta.content;
                   completeContent += newContent;
@@ -115,7 +130,7 @@ export async function generateChatCompletion(options: ChatCompletionOptions): Pr
                   totalTokens = data.usage;
                 }
               } catch (e) {
-                console.warn('Error parsing streaming response:', e);
+                console.warn('Error parsing streaming response:', e, line);
               }
             }
           }

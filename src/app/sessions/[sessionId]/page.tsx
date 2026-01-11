@@ -11,12 +11,13 @@ import { useForm } from 'react-hook-form';
 import { generateChatCompletion, ApiMessage } from '@/lib/openrouter-client';
 import { getGlobalConfig, trackMessageSent } from '@/lib/storage';
 import { generateChatTitle } from '@/lib/promptUtils';
-import { ArrowLeft, Home, Edit } from 'lucide-react';
 import AgentModal from '@/components/chat/AgentModal';
 import { convertImageToBase64, supportsImages } from '@/lib/imageUtils';
 import { useApiKey } from '@/hooks/useApiKey';
 import { calculateChatCompletionPrice } from '@/lib/costUtils';
-import { orchestratorAgent } from '@/agents/orchestrator';
+import { useMysqlMcp } from '@/agents/mysql';
+import AgentSidebar from '@/components/agent/AgentSidebar';
+import Header from '@/components/chat/Header';
 
 async function buildUserMessage(data: { message: string; image?: File }): Promise<Message> {
   let contentForDisplay = data.message;
@@ -68,6 +69,15 @@ export default function SessionPage() {
   const { register, handleSubmit, reset, setValue } = useForm<{ message: string; image?: File }>();
   const [loading, setLoading] = useState(true);
   const [showAgentModal, setShowAgentModal] = useState(false);
+  const mysqlMcp = useMysqlMcp({isTesting: false});
+  const [isAgentSidebarOpen, setIsAgentSidebarOpen] = useState(false);
+
+  // Open sidebar after planning succeeds (i.e. tasks exist). Exclude planning time by not opening until tasks are set.
+  useEffect(() => {
+    if (selectedAgent?.useMysqlMcp && mysqlMcp.tasks.length > 0) {
+      setIsAgentSidebarOpen(true);
+    }
+  }, [selectedAgent?.useMysqlMcp, mysqlMcp.tasks.length]);
 
   // Check if API key is available for the selected provider
   const { getApiKeyForAgentOrRedirect } = useApiKey();
@@ -286,7 +296,7 @@ export default function SessionPage() {
       // Optional: orchestrate MySQL MCP tool calls and inject results as a synthetic system message
       if (selectedAgent.useMysqlMcp) {
         try {
-          const { toolSystemMessage } = await orchestratorAgent({
+          const { toolSystemMessage } = await mysqlMcp.run({
             apiMessages,
             agent: selectedAgent,
             apiKey: apiKey!,
@@ -305,13 +315,14 @@ export default function SessionPage() {
         model: selectedAgent.modelName,
         apiKey: apiKey!,
         provider: selectedAgent.provider,
+        isStreaming: true,
         onUpdate: (content) => {
           setStreamingContent(content);
         }
       });
 
       const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
+        id: Date.now().toString(),
         role: 'assistant',
         content: response.content,
         createdAt: new Date().toISOString(),
@@ -337,7 +348,7 @@ export default function SessionPage() {
       console.error('Error generating response:', error);
       
       const errorMessage: Message = {
-        id: (Date.now() + 1).toString(),
+        id: Date.now().toString(),
         role: 'assistant',
         content: `Error: ${error instanceof Error ? error.message : 'Failed to generate response. Please check your API key and try again.'}`,
         createdAt: new Date().toISOString(),
@@ -371,14 +382,6 @@ export default function SessionPage() {
       setMessages([]);
     }
   };
-  
-  const handleNavigateToSessions = () => {
-    router.push(`/agents/${selectedAgent?.id}`);
-  };
-
-  const handleNavigateToHome = () => {
-    router.push('/');
-  };
 
   const handleEditAgent = () => {
     if (selectedAgent) {
@@ -409,102 +412,79 @@ export default function SessionPage() {
   
   return (
     <div className="flex flex-col h-screen bg-gray-50 dark:bg-gray-900">
-      <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-3 sm:p-4 sticky top-0 z-10">
-        <div className="max-w-3xl mx-auto flex justify-between items-center">
-          <div className="flex items-center min-w-0 flex-1">
-            <div className="flex-shrink-0 flex space-x-1 mr-2">
-              <button
-                onClick={handleNavigateToSessions}
-                className="p-1 sm:p-2 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white rounded-lg touch-manipulation"
-                aria-label="Back to sessions"
-                title="Back to sessions"
-              >
-                <ArrowLeft size={18} />
-              </button>
-              <button
-                onClick={handleNavigateToHome}
-                className="p-1 sm:p-2 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white rounded-lg touch-manipulation"
-                aria-label="Home"
-                title="Home"
-              >
-                <Home size={18} />
-              </button>
-            </div>
-            <div className="min-w-0 flex-1 overflow-hidden">
-              <h1 className="text-base sm:text-lg font-bold text-gray-800 dark:text-white truncate">
-                {currentChat?.title 
-                  ? (currentChat.title.length > 30 
-                    ? currentChat.title.substring(0, 30) + '...' 
-                    : currentChat.title)
-                  : 'AI Chat'}
-                {isTitleGenerating && (
-                  <span className="ml-2 text-xs text-gray-500 dark:text-gray-400 animate-pulse">
-                    ...
-                  </span>
-                )}
-              </h1>
-              {selectedAgent?.name && (
-                <div className="flex items-center text-xs text-gray-500 dark:text-gray-400">
-                  <span className="truncate max-w-[150px] sm:max-w-[200px]">
-                    {selectedAgent.name.length > 25 
-                      ? selectedAgent.name.substring(0, 25) + '...' 
-                      : selectedAgent.name}
-                  </span>
-                  {selectedAgent && (
-                    <button
-                      onClick={handleEditAgent}
-                      className="p-1 ml-1 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 rounded touch-manipulation"
-                      aria-label="Edit agent"
-                      title="Edit agent"
-                    >
-                      <Edit size={12} />
-                    </button>
-                  )}
-                </div>
+      <Header
+        selectedAgent={selectedAgent!}
+        currentChat={currentChat!}
+        isTitleGenerating={isTitleGenerating}
+        handleEditAgent={handleEditAgent}
+        handleClearChat={handleClearChat}
+      />
+
+      <div className="flex flex-1 overflow-hidden">
+        {/* Main chat column */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <div className="flex-1 overflow-y-auto p-2 sm:p-4 md:p-6">
+            <div className="max-w-3xl mx-auto">
+              {messages.length === 0 ? (
+                <EmptyState 
+                  onSendMessage={(content) => {
+                    onSendMessage({ message: content });
+                  }} 
+                  agent={selectedAgent}
+                />
+              ) : (
+                <MessageList 
+                  messages={messages}
+                  isGenerating={isGenerating}
+                  streamingContent={streamingContent}
+                />
               )}
             </div>
           </div>
-
-          <div className="flex-shrink-0 ml-2">
-            <button
-              onClick={handleClearChat}
-              className="px-2 py-1 sm:px-3 sm:py-2 text-xs sm:text-sm bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg touch-manipulation"
-            >
-              Clear
-            </button>
+          
+          <div className="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-2 sm:p-4 sticky bottom-0">
+            <div className="max-w-3xl mx-auto">
+              <MessageInput 
+                onSubmit={handleSubmit(onSendMessage)}
+                register={register}
+                setValue={setValue}
+                isSubmitting={isGenerating}
+                supportsImages={supportsImages(selectedAgent)}
+              />
+            </div>
           </div>
         </div>
-      </header>
-      
-      <div className="flex-1 overflow-y-auto p-2 sm:p-4 md:p-6">
-        <div className="max-w-3xl mx-auto">
-          {messages.length === 0 ? (
-            <EmptyState 
-              onSendMessage={(content) => {
-                onSendMessage({ message: content });
-              }} 
-              agent={selectedAgent}
+
+        {/* Right sidebar (desktop) + drawer (mobile) */}
+        {selectedAgent?.useMysqlMcp && (mysqlMcp.tasks.length > 0 || mysqlMcp.resultsByTask.length > 0) && (
+          <div className="hidden md:block">
+            <AgentSidebar
+              open={isAgentSidebarOpen}
+              onClose={() => setIsAgentSidebarOpen(false)}
+              isExecuting={mysqlMcp.isExecuting}
+              error={mysqlMcp.error}
+              reasoning={mysqlMcp.reasoning}
+              tasks={mysqlMcp.tasks}
+              toolCallsByTask={mysqlMcp.toolCallsByTask}
+              resultsByTask={mysqlMcp.resultsByTask}
             />
-          ) : (
-            <MessageList 
-              messages={messages}
-              isGenerating={isGenerating}
-              streamingContent={streamingContent}
+          </div>
+        )}
+
+        {selectedAgent?.useMysqlMcp && (mysqlMcp.tasks.length > 0 || mysqlMcp.resultsByTask.length > 0) && (
+          <div className="md:hidden">
+            <AgentSidebar
+              open={isAgentSidebarOpen}
+              onClose={() => setIsAgentSidebarOpen(false)}
+              isExecuting={mysqlMcp.isExecuting}
+              error={mysqlMcp.error}
+              reasoning={mysqlMcp.reasoning}
+              tasks={mysqlMcp.tasks}
+              toolCallsByTask={mysqlMcp.toolCallsByTask}
+              resultsByTask={mysqlMcp.resultsByTask}
             />
-          )}
-        </div>
-      </div>
-      
-      <div className="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-2 sm:p-4 sticky bottom-0">
-        <div className="max-w-3xl mx-auto">
-          <MessageInput 
-            onSubmit={handleSubmit(onSendMessage)}
-            register={register}
-            setValue={setValue}
-            isSubmitting={isGenerating}
-            supportsImages={supportsImages(selectedAgent)}
-          />
-        </div>
+          </div>
+        )}
       </div>
       
       {/* Agent Modal */}
