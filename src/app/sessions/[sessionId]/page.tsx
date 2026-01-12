@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useParams } from 'next/navigation';
 import { chatDB, agentDB, Chat as ChatType, ChatAgent, Message } from '@/lib/db';
@@ -8,9 +8,8 @@ import MessageList from '@/components/chat/MessageList';
 import MessageInput from '@/components/chat/MessageInput';
 import EmptyState from '@/components/chat/EmptyState';
 import { useForm } from 'react-hook-form';
-import { generateChatCompletion, ApiMessage } from '@/lib/openrouter-client';
-import { getGlobalConfig, trackMessageSent } from '@/lib/storage';
-import { generateChatTitle } from '@/lib/promptUtils';
+import { generateChatCompletion } from '@/lib/openrouter-client';
+import { trackMessageSent } from '@/lib/storage';
 import AgentModal from '@/components/chat/AgentModal';
 import { convertImageToBase64, supportsImages } from '@/lib/imageUtils';
 import { useApiKey } from '@/hooks/useApiKey';
@@ -18,6 +17,8 @@ import { calculateChatCompletionPrice } from '@/lib/costUtils';
 import { AgentRunSnapshot, useMysqlMcp } from '@/agents/mysql';
 import AgentSidebar from '@/components/agent/AgentSidebar';
 import Header from '@/components/chat/Header';
+import { useTitleGenerator } from '@/hooks/useTitleGenerator';
+import { useAiMessagesBuilder } from '@/hooks/useAiMessagesBuilder';
 
 async function buildUserMessage(data: { message: string; image?: File }): Promise<Message> {
   let contentForDisplay = data.message;
@@ -45,10 +46,10 @@ async function buildUserMessage(data: { message: string; image?: File }): Promis
   }
 
   return {
-    id: Date.now().toString(),
     role: 'user',
-    content: contentForDisplay,
+    id: Date.now().toString(),
     createdAt: new Date().toISOString(),
+    content: contentForDisplay,
     rawContent,
   };
 }
@@ -57,18 +58,18 @@ export default function SessionPage() {
   const router = useRouter();
   const params = useParams();
   const sessionId = params.sessionId as string;
-  const titleGeneratedForChatRef = useRef<string | null>(null);
   
   const [messages, setMessages] = useState<Message[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<ChatAgent | null>(null);
   const [currentChat, setCurrentChat] = useState<ChatType | null>(null);
+
   const [isGenerating, setIsGenerating] = useState(false);
-  const [isTitleGenerating, setIsTitleGenerating] = useState(false);
   const [streamingContent, setStreamingContent] = useState<string | null>(null);
   
   const { register, handleSubmit, reset, setValue } = useForm<{ message: string; image?: File }>();
   const [loading, setLoading] = useState(true);
   const [showAgentModal, setShowAgentModal] = useState(false);
+
   const mysqlMcp = useMysqlMcp({isTesting: false});
   const [isAgentSidebarOpen, setIsAgentSidebarOpen] = useState(false);
   const [selectedRun, setSelectedAgentRun] = useState<{
@@ -103,54 +104,14 @@ export default function SessionPage() {
   const { getApiKeyForAgentOrRedirect } = useApiKey();
   const apiKey = getApiKeyForAgentOrRedirect(selectedAgent);
 
-  const buildApiMessages = useCallback((messagesForApi: Message[]): ApiMessage[] => {
-    if (!selectedAgent) return [];
+  const { isTitleGenerating } = useTitleGenerator({
+    currentChat,
+    selectedAgent,
+    messages,
+    setCurrentChat,
+  });
 
-    const apiMessages: ApiMessage[] = [];
-
-    // Get user information from global config
-    const { userNickname, userJobTitle } = getGlobalConfig();
-
-    // Add the system prompt first
-    const systemPrompt = selectedAgent.oneShotExample
-      ? `${selectedAgent.systemPrompt}\n\n${selectedAgent.oneShotExample}`
-      : selectedAgent.systemPrompt;
-    let enhancedSystemPrompt = systemPrompt;
-
-    // Add user information to the system prompt if available
-    if (userNickname && userJobTitle) {
-      const userInfoPrompt = `\n\nYou are chatting with ${userNickname}, who works as a ${userJobTitle}.`;
-      enhancedSystemPrompt = `${systemPrompt}${userInfoPrompt}`;
-    }
-
-    apiMessages.push({
-      role: 'system',
-      content: enhancedSystemPrompt,
-    });
-
-    // Add the chat history
-    for (const msg of messagesForApi) {
-      // Skip system messages as we already added our enhanced system prompt
-      if (msg.role === 'system') continue;
-
-      // Handle messages with images
-      if (msg.rawContent && msg.role === 'user') {
-        // If the message has structured content (for images), use it
-        apiMessages.push({
-          role: msg.role,
-          content: JSON.parse(msg.rawContent),
-        });
-      } else {
-        // Otherwise use the regular content
-        apiMessages.push({
-          role: msg.role,
-          content: msg.content,
-        });
-      }
-    }
-
-    return apiMessages;
-  }, [selectedAgent]);
+  const buildApiMessages = useAiMessagesBuilder(selectedAgent);
   
   // Load chat and agent data
   useEffect(() => {
@@ -198,89 +159,20 @@ export default function SessionPage() {
     loadChatData();
   }, [sessionId, router]);
 
-  // Generate a title for the chat if it doesn't have one
-  useEffect(() => {
-    const maybeGenerateTitle = async () => {
-      if (!currentChat || !selectedAgent) return;
-      if (isTitleGenerating) return;
+  const saveMessages = useCallback(async (messages: Message[]) => {
+    setMessages(messages);
+    await chatDB.update(currentChat!.id, {
+      messages: messages,
+    });
+  }, [currentChat]);
 
-      const placeholderTitle = `New chat with ${selectedAgent.name}`;
-      if (currentChat.title !== placeholderTitle) return;
-
-      const userMessages = messages.filter(msg => msg.role === 'user');
-      const assistantMessages = messages.filter(msg => msg.role === 'assistant');
-      if (userMessages.length !== 1) return;
-      if (assistantMessages.length > 0) return;
-
-      if (titleGeneratedForChatRef.current === currentChat.id) return;
-
-      // Mark as attempted so we don't spam title generation on re-renders
-      titleGeneratedForChatRef.current = currentChat.id;
-
-      const firstUserMessage = userMessages[0];
-      const firstMessageText = (() => {
-        if (firstUserMessage.rawContent) {
-          try {
-            const parsed: unknown = JSON.parse(firstUserMessage.rawContent);
-            if (Array.isArray(parsed)) {
-              const textParts = parsed
-                .map((item: unknown) => {
-                  if (!item || typeof item !== 'object') return '';
-                  const maybeType = (item as { type?: unknown }).type;
-                  if (maybeType !== 'text') return '';
-                  const maybeText = (item as { text?: unknown }).text;
-                  return typeof maybeText === 'string' ? maybeText : '';
-                })
-                .join(' ')
-                .trim();
-              if (textParts) return textParts;
-            }
-          } catch {
-            // Fall back below
-          }
-        }
-
-        // Avoid including giant image data URLs from markdown embeds
-        return firstUserMessage.content.replace(/!\[[^\]]*\]\([^)]+\)/g, '').trim();
-      })();
-
-      try {
-        setIsTitleGenerating(true);
-
-        const title = await generateChatTitle(
-          firstMessageText,
-          selectedAgent.provider,
-          apiKey!
-        );
-
-        await chatDB.update(currentChat.id, { title });
-
-        // Update local state immediately so header reflects new title without reload
-        setCurrentChat(prev => (prev ? { ...prev, title } : prev));
-      } catch (error) {
-        console.error('Error generating chat title:', error);
-      } finally {
-        setIsTitleGenerating(false);
-      }
-    };
-
-    void maybeGenerateTitle();
-  }, [
-    currentChat,
-    selectedAgent,
-    messages,
-    isTitleGenerating,
-    apiKey,
-  ]);
-  
   const onSendMessage = async (data: { message: string; image?: File }) => {
-    if ((!data.message.trim() && !data.image) || isGenerating) return;
-    
-    // Check if agent is selected
-    if (!selectedAgent || !currentChat) {
-      router.push('/home');
-      return;
-    }
+    if (
+      (!data.message.trim() && !data.image) 
+      || isGenerating 
+      || !selectedAgent 
+      || !currentChat
+    ) return;
     
     // Reset the form after sending
     reset();
@@ -298,14 +190,8 @@ export default function SessionPage() {
     }
     
     // Add message to current chat
-    const updatedMessages = [...messages, userMessage];
-    
-    setMessages(updatedMessages);
-    
-    // Update the chat in the database
-    await chatDB.update(currentChat.id, { 
-      messages: updatedMessages,
-    });
+    let updatedMessages = [...messages, userMessage];
+    await saveMessages(updatedMessages);
 
     setIsGenerating(true);
     setStreamingContent('');
@@ -325,7 +211,17 @@ export default function SessionPage() {
           agentRunSnapshot = runSnapshot;
 
           if (toolSystemMessage) {
-            apiMessages = [apiMessages[0], toolSystemMessage, ...apiMessages.slice(1)];
+            const toolMessage: Message = {
+              role: 'system',
+              id: `${Date.now()}-tool`,
+              createdAt: new Date().toISOString(),
+              content: toolSystemMessage.content as string,
+            };
+
+            updatedMessages = [...updatedMessages, toolMessage];
+            saveMessages(updatedMessages);
+
+            apiMessages = [...apiMessages, toolSystemMessage];
           }
         } catch (e) {
           console.warn('MySQL MCP orchestration failed; continuing without tools:', e);
@@ -344,10 +240,10 @@ export default function SessionPage() {
       });
 
       const assistantMessage: Message = {
-        id: Date.now().toString(),
         role: 'assistant',
-        content: response.content,
+        id: Date.now().toString(),
         createdAt: new Date().toISOString(),
+        content: response.content,
         agentRunSnapshot: agentRunSnapshot ?? undefined,
         price: calculateChatCompletionPrice({
           apiMessages,
@@ -357,13 +253,7 @@ export default function SessionPage() {
       };
       
       const finalMessages = [...updatedMessages, assistantMessage];
-      
-      setMessages(finalMessages);
-      
-      // Update the chat in the database
-      await chatDB.update(currentChat.id, { 
-        messages: finalMessages,
-      });
+      await saveMessages(finalMessages);
 
       setIsGenerating(false);
       setStreamingContent(null);
@@ -379,11 +269,7 @@ export default function SessionPage() {
       
       const finalMessages = [...updatedMessages, errorMessage];
       
-      setMessages(finalMessages);
-      // Update the chat in the database
-      await chatDB.update(currentChat.id, { 
-        messages: finalMessages,
-      });
+      await saveMessages(finalMessages);
 
       setIsGenerating(false);
       setStreamingContent(null);

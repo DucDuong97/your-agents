@@ -78,7 +78,6 @@ export function useMysqlMcp({isTesting = false}: {isTesting?: boolean} = {}) {
 
   const mockRun = useCallback(async (): Promise<{
     toolSystemMessage: ApiMessage | null;
-    results: MysqlToolResult[];
     runSnapshot: AgentRunSnapshot | null;
   }> => {
     setIsPlanning(true);
@@ -166,11 +165,9 @@ export function useMysqlMcp({isTesting = false}: {isTesting?: boolean} = {}) {
       localResultsByTask.push(t3Entry);
       setResultsByTask((prev) => [...prev, t3Entry]);
 
-      const flatResults = localResultsByTask.flatMap((t) => t.results);
       const toolSystemMessage = buildMysqlToolSystemMessage({
         tasks: demoTasks,
         resultsByTask: localResultsByTask.map(({ task, results }) => ({ task, results })),
-        flatResults,
       });
 
       const runSnapshot: AgentRunSnapshot = {
@@ -183,7 +180,7 @@ export function useMysqlMcp({isTesting = false}: {isTesting?: boolean} = {}) {
         error: null,
       };
 
-      return { toolSystemMessage, results: flatResults, runSnapshot };
+      return { toolSystemMessage, runSnapshot };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setError(msg);
@@ -200,7 +197,6 @@ export function useMysqlMcp({isTesting = false}: {isTesting?: boolean} = {}) {
     apiKey: string;
   }): Promise<{
     toolSystemMessage: ApiMessage | null;
-    results: MysqlToolResult[];
     runSnapshot: AgentRunSnapshot | null;
   }> => {
     if (isTesting) {
@@ -217,7 +213,7 @@ export function useMysqlMcp({isTesting = false}: {isTesting?: boolean} = {}) {
 
       if (!plan.needed || !plan.tasks.length) {
         console.log("no plan needed, reason:", plan.reasoning);
-        return { toolSystemMessage: null, results: [], runSnapshot: null };
+        return { toolSystemMessage: null, runSnapshot: null };
       }
 
       // IMPORTANT: fetch the exact MCP tool schemas once and inject them into the tool-call generator context,
@@ -246,11 +242,9 @@ export function useMysqlMcp({isTesting = false}: {isTesting?: boolean} = {}) {
         setResultsByTask((prev) => [...prev, entry]);
       }
 
-      const flatResults = localResultsByTask.flatMap((t) => t.results);
       const toolSystemMessage = buildMysqlToolSystemMessage({
         tasks: plan.tasks,
         resultsByTask: localResultsByTask.map(({ task: t, results }) => ({ task: t, results })),
-        flatResults,
       });
 
       const runSnapshot: AgentRunSnapshot = {
@@ -263,7 +257,7 @@ export function useMysqlMcp({isTesting = false}: {isTesting?: boolean} = {}) {
         error: null,
       };
 
-      return { toolSystemMessage, results: flatResults, runSnapshot };
+      return { toolSystemMessage, runSnapshot };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setError(msg);
@@ -419,10 +413,8 @@ export async function runMysqlToolCallsDirect(args: {
 export function buildMysqlToolSystemMessage(args: {
   tasks: string[];
   resultsByTask: Array<{ task: string; results: MysqlToolResult[] }>;
-  flatResults: MysqlToolResult[];
 }): ApiMessage | null {
-  const { tasks, resultsByTask, flatResults } = args;
-  if (!flatResults.length) return null;
+  const { tasks, resultsByTask } = args;
 
   return {
     role: 'system',
