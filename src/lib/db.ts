@@ -1,4 +1,4 @@
-import { MysqlToolCallsByTask, MysqlResultsByTask } from '@/agents/mysql';
+import { MysqlToolCallsByTask, MysqlResultsByTask } from '@/hooks/useMcp';
 import { nanoid } from 'nanoid';
 
 // Define types for our data

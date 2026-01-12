@@ -53,7 +53,7 @@ export type AgentRunSnapshot = {
   error: string | null;
 };
 
-export function useMysqlMcp({isTesting = false}: {isTesting?: boolean} = {}) {
+export function useMcp({isTesting = false}: {isTesting?: boolean} = {}) {
   const [isPlanning, setIsPlanning] = useState(false);
   const [isExecuting, setIsExecuting] = useState(false);
   const [error, setError] = useState<string | null>(null);

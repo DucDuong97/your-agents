@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import type { MysqlPlannedCall, MysqlResultsByTask, MysqlToolCallsByTask, MysqlToolResult, MysqlToolResultContent } from '@/agents/mysql';
+import type { MysqlPlannedCall, MysqlResultsByTask, MysqlToolCallsByTask, MysqlToolResult, MysqlToolResultContent } from '@/hooks/useMcp';
 
 type Props = {
   open: boolean;

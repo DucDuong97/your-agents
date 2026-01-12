@@ -13,7 +13,7 @@ import AgentModal from '@/components/chat/AgentModal';
 import { convertImageToBase64, supportsImages } from '@/lib/imageUtils';
 import { useApiKey } from '@/hooks/useApiKey';
 import { calculateChatCompletionPrice } from '@/lib/costUtils';
-import { AgentRunSnapshot, useMysqlMcp } from '@/agents/mysql';
+import { AgentRunSnapshot, useMcp } from '@/hooks/useMcp';
 import AgentSidebar from '@/components/agent/AgentSidebar';
 import Header from '@/components/chat/Header';
 import { useTitleGenerator } from '@/hooks/useTitleGenerator';
@@ -70,7 +70,7 @@ export default function SessionPage() {
   const [loading, setLoading] = useState(true);
   const [showAgentModal, setShowAgentModal] = useState(false);
 
-  const mysqlMcp = useMysqlMcp({isTesting: false});
+  const mysqlMcp = useMcp({isTesting: false});
   const [isAgentSidebarOpen, setIsAgentSidebarOpen] = useState(false);
   const [selectedRun, setSelectedAgentRun] = useState<{
     messageId: string;
