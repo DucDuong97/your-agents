@@ -5,6 +5,7 @@ import { getModels } from '@/lib/modelUtils';
 import { generateExamplePrompts, generateExamplePromptsSync } from '@/lib/promptUtils';
 import ModelSelect from './ModelSelect';
 import SystemPromptEditor from './SystemPromptEditor';
+import KnowledgeEditor from './KnowledgeEditor';
 import { requestNotificationPermission } from '../../utils/pushNotifications';
 
 interface AgentModalProps {
@@ -16,12 +17,15 @@ interface AgentModalProps {
 export default function AgentModal({ initialAgent, onSubmit, onClose }: AgentModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSystemPromptEditor, setShowSystemPromptEditor] = useState(false);
+  const [showKnowledgeEditor, setShowKnowledgeEditor] = useState(false);
   const [oneShotEnabled, setOneShotEnabled] = useState(!!initialAgent?.oneShotExample);
 
   const { register, handleSubmit, setValue, watch } = useForm<Omit<ChatAgent, 'id' | 'createdAt' | 'updatedAt'>>({
     defaultValues: initialAgent ? {
       name: initialAgent.name,
       systemPrompt: initialAgent.systemPrompt,
+      knowledgeGenerationPrompt: initialAgent.knowledgeGenerationPrompt ?? '',
+      knowledge: initialAgent.knowledge ?? {},
       modelName: initialAgent.modelName,
       provider: initialAgent.provider,
       examplePrompts: initialAgent.examplePrompts || [],
@@ -36,6 +40,8 @@ export default function AgentModal({ initialAgent, onSubmit, onClose }: AgentMod
     } : {
       name: '',
       systemPrompt: 'You are a helpful assistant.',
+      knowledgeGenerationPrompt: '',
+      knowledge: {},
       modelName: 'openai/gpt-3.5-turbo',
       provider: 'openrouter',
       examplePrompts: [],
@@ -53,6 +59,7 @@ export default function AgentModal({ initialAgent, onSubmit, onClose }: AgentMod
   const currentProvider = watch('provider') as 'openrouter' | 'openai';
   const currentModelName = watch('modelName');
   const currentSystemPrompt = watch('systemPrompt');
+  const currentKnowledge = watch('knowledge');
   
   // Get models for the current provider
   const models = getModels(currentProvider);
@@ -119,6 +126,8 @@ export default function AgentModal({ initialAgent, onSubmit, onClose }: AgentMod
   const handleSystemPromptChange = (newPrompt: string) => {
     setValue('systemPrompt', newPrompt);
   };
+
+  const openKnowledgeEditor = () => setShowKnowledgeEditor(true);
 
   // Handle one-shot example toggle
   const handleOneShotToggle = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -237,6 +246,41 @@ export default function AgentModal({ initialAgent, onSubmit, onClose }: AgentMod
                 This prompt defines the agent&apos;s personality and capabilities.
               </p>
             </div>
+
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Knowledge Generation Prompt
+              </label>
+              <textarea
+                {...register('knowledgeGenerationPrompt')}
+                className="text-sm w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white font-mono"
+                rows={4}
+                placeholder="Optional: instructions for how this agent should generate/maintain its knowledge."
+              />
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Used when generating or updating the agent&apos;s stored knowledge (optional).
+              </p>
+            </div>
+
+            {currentKnowledge && Object.keys(currentKnowledge).length > 0 && (
+              <div className="mb-6">
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Knowledge Map
+                </label>
+                <button
+                  type="button"
+                  onClick={openKnowledgeEditor}
+                  className="text-sm text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
+                >
+                  Edit Knowledge
+                </button>
+              </div>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                {Object.keys(currentKnowledge).length} key{Object.keys(currentKnowledge).length === 1 ? '' : 's'} stored
+              </p>
+              </div>
+            )}
 
             <div className="mb-6">
               <div className="flex items-center">
@@ -374,6 +418,16 @@ export default function AgentModal({ initialAgent, onSubmit, onClose }: AgentMod
           value={currentSystemPrompt}
           onChange={handleSystemPromptChange}
           onClose={() => setShowSystemPromptEditor(false)}
+        />
+      )}
+
+      {/* Knowledge Map Editor Modal */}
+      {showKnowledgeEditor && (
+        <KnowledgeEditor
+          open={showKnowledgeEditor}
+          knowledge={currentKnowledge ?? {}}
+          onClose={() => setShowKnowledgeEditor(false)}
+          onSave={(knowledge) => setValue('knowledge', knowledge)}
         />
       )}
     </div>

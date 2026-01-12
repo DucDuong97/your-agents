@@ -1,9 +1,9 @@
 'use client';
 import { useCallback, useState } from 'react';
 
-import type { ApiMessage } from '@/lib/openrouter-client';
-import { generateChatCompletion } from '@/lib/openrouter-client';
-import type { ChatAgent } from '@/lib/db';
+import type { ApiMessage } from '@/lib/openrouter';
+import { generateChatCompletion } from '@/lib/openrouter';
+import type { ChatAgent, Message } from '@/lib/db';
 import { SqlMcpClient } from '@/mcp/sql';
 
 export type MysqlToolName = 'mysql_query' | 'mysql_list_tables' | 'mysql_describe_table';
@@ -77,7 +77,7 @@ export function useMysqlMcp({isTesting = false}: {isTesting?: boolean} = {}) {
 
 
   const mockRun = useCallback(async (): Promise<{
-    toolSystemMessage: ApiMessage | null;
+    toolSystemMessage: Message | null;
     runSnapshot: AgentRunSnapshot | null;
   }> => {
     setIsPlanning(true);
@@ -196,7 +196,7 @@ export function useMysqlMcp({isTesting = false}: {isTesting?: boolean} = {}) {
     agent: ChatAgent;
     apiKey: string;
   }): Promise<{
-    toolSystemMessage: ApiMessage | null;
+    toolSystemMessage: Message | null;
     runSnapshot: AgentRunSnapshot | null;
   }> => {
     if (isTesting) {
@@ -259,6 +259,7 @@ export function useMysqlMcp({isTesting = false}: {isTesting?: boolean} = {}) {
 
       return { toolSystemMessage, runSnapshot };
     } catch (e) {
+      console.error('MySQL MCP orchestration failed; continuing without tools:', e);
       const msg = e instanceof Error ? e.message : String(e);
       setError(msg);
       throw e;
@@ -320,6 +321,7 @@ export async function planMysqlTasks(args: {
     agent.provider === 'openrouter' ? 'openai/gpt-4o-mini' : 'gpt-4o-mini';
 
   const resp = await generateChatCompletion({
+    title: 'MySQL MCP Task Planner',
     messages: [plannerSystem, plannerUser],
     model: plannerModel,
     apiKey,
@@ -371,6 +373,7 @@ export async function planMysqlToolCallsForTask(args: {
     agent.provider === 'openrouter' ? 'openai/gpt-4o-mini' : 'gpt-4o-mini';
 
   const resp = await generateChatCompletion({
+    title: 'MySQL MCP Tool Generator',
     messages: [sys, user],
     model: plannerModel,
     apiKey,
@@ -413,14 +416,18 @@ export async function runMysqlToolCallsDirect(args: {
 export function buildMysqlToolSystemMessage(args: {
   tasks: string[];
   resultsByTask: Array<{ task: string; results: MysqlToolResult[] }>;
-}): ApiMessage | null {
+}): Message | null {
   const { tasks, resultsByTask } = args;
 
   return {
     role: 'system',
-    content:
-      'MySQL MCP task execution results (read-only). Use these results as ground truth and cite them when answering:\n' +
+    id: `${Date.now()}-tool`,
+    createdAt: new Date().toISOString(),
+    content: [
+      '[MCP]',
+      'MySQL MCP task execution results (read-only). Use these results as ground truth and cite them when answering:',
       JSON.stringify({ tasks, resultsByTask }, null, 2),
+    ].join('\n'),
   };
 }
 

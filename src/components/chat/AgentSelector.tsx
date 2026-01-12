@@ -84,6 +84,7 @@ export default function AgentSelector({ onSelectAgent }: AgentSelectorProps) {
     const exportData = {
       name: agent.name,
       systemPrompt: agent.systemPrompt,
+      knowledgeGenerationPrompt: agent.knowledgeGenerationPrompt ?? '',
       modelName: agent.modelName,
       provider: agent.provider,
       examplePrompts: agent.examplePrompts,

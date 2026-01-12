@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 
 import type { ChatAgent, Message } from '@/lib/db';
-import type { ApiMessage } from '@/lib/openrouter-client';
+import { type ApiMessage } from '@/lib/openrouter';
 import { getGlobalConfig } from '@/lib/storage';
 
 export function useAiMessagesBuilder(selectedAgent: ChatAgent | null) {

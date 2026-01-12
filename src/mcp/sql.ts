@@ -103,7 +103,6 @@ export class SqlMcpClient {
   }
 
   async listTools(): Promise<unknown> {
-    console.log("listTools");
     return await this.request('tools/list', {});
   }
 

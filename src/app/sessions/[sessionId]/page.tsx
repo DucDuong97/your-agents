@@ -1,14 +1,13 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
-import { useParams } from 'next/navigation';
+import { useRouter, useParams } from 'next/navigation';
 import { chatDB, agentDB, Chat as ChatType, ChatAgent, Message } from '@/lib/db';
 import MessageList from '@/components/chat/MessageList';
 import MessageInput from '@/components/chat/MessageInput';
 import EmptyState from '@/components/chat/EmptyState';
 import { useForm } from 'react-hook-form';
-import { generateChatCompletion } from '@/lib/openrouter-client';
+import { generateChatCompletion, type ApiMessage, toApiMessage } from '@/lib/openrouter';
 import { trackMessageSent } from '@/lib/storage';
 import AgentModal from '@/components/chat/AgentModal';
 import { convertImageToBase64, supportsImages } from '@/lib/imageUtils';
@@ -19,6 +18,7 @@ import AgentSidebar from '@/components/agent/AgentSidebar';
 import Header from '@/components/chat/Header';
 import { useTitleGenerator } from '@/hooks/useTitleGenerator';
 import { useAiMessagesBuilder } from '@/hooks/useAiMessagesBuilder';
+import { useKnowledgeManager } from '@/hooks/useKnowledgeManager';
 
 async function buildUserMessage(data: { message: string; image?: File }): Promise<Message> {
   let contentForDisplay = data.message;
@@ -76,6 +76,8 @@ export default function SessionPage() {
     messageId: string;
     run: AgentRunSnapshot;
   } | null>(null);
+
+  const { generateKnowledge, buildKnowledgeSystemMessage } = useKnowledgeManager(selectedAgent);
 
   // Open sidebar after planning succeeds (i.e. tasks exist). Exclude planning time by not opening until tasks are set.
   useEffect(() => {
@@ -197,38 +199,40 @@ export default function SessionPage() {
     setStreamingContent('');
     
     try {
-      let apiMessages = buildApiMessages(updatedMessages);
+      let apiMessages: ApiMessage[] = await buildApiMessages(updatedMessages);
       let agentRunSnapshot: AgentRunSnapshot | null = null;
+      
+      // Optional: inject relevant stored knowledge as a system message
+      if (selectedAgent.knowledgeGenerationPrompt && selectedAgent.knowledge?.length) {
+        const { knowledgeSystemMessage } = await buildKnowledgeSystemMessage(apiMessages);
+
+        if (knowledgeSystemMessage) {
+          updatedMessages = [...updatedMessages, knowledgeSystemMessage];
+          apiMessages = [...apiMessages, toApiMessage(knowledgeSystemMessage)];
+
+          await saveMessages(updatedMessages);
+
+        }
+      }
 
       // Optional: orchestrate MySQL MCP tool calls and inject results as a synthetic system message
       if (selectedAgent.useMysqlMcp) {
-        try {
-          const { toolSystemMessage, runSnapshot } = await mysqlMcp.run({
-            apiMessages,
-            agent: selectedAgent,
-            apiKey: apiKey!,
-          });
-          agentRunSnapshot = runSnapshot;
+        const { toolSystemMessage, runSnapshot } = await mysqlMcp.run({
+          apiMessages, agent: selectedAgent, apiKey: apiKey!,
+        });
+        agentRunSnapshot = runSnapshot;
 
-          if (toolSystemMessage) {
-            const toolMessage: Message = {
-              role: 'system',
-              id: `${Date.now()}-tool`,
-              createdAt: new Date().toISOString(),
-              content: toolSystemMessage.content as string,
-            };
+        if (toolSystemMessage) {
+          updatedMessages = [...updatedMessages, toolSystemMessage];
+          apiMessages = [...apiMessages, toApiMessage(toolSystemMessage)];
 
-            updatedMessages = [...updatedMessages, toolMessage];
-            saveMessages(updatedMessages);
+          await saveMessages(updatedMessages);
 
-            apiMessages = [...apiMessages, toolSystemMessage];
-          }
-        } catch (e) {
-          console.warn('MySQL MCP orchestration failed; continuing without tools:', e);
         }
       }
       
       const response = await generateChatCompletion({
+        title: 'Assistant Response',
         messages: apiMessages,
         model: selectedAgent.modelName,
         apiKey: apiKey!,
@@ -257,6 +261,10 @@ export default function SessionPage() {
 
       setIsGenerating(false);
       setStreamingContent(null);
+
+      if (selectedAgent.knowledgeGenerationPrompt) {
+        await generateKnowledge(finalMessages);
+      }
     } catch (error) {
       console.error('Error generating response:', error);
       

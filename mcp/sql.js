@@ -27,6 +27,185 @@ function intFromEnv(name, fallback) {
   return n;
 }
 
+function formatCellValue(value) {
+  if (value === null) return 'NULL';
+  if (value === undefined) return 'undefined';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number') return String(value);
+  if (typeof value === 'boolean') return value ? 'true' : 'false';
+  if (typeof value === 'bigint') return value.toString();
+  if (value instanceof Date) {
+    const t = value.getTime();
+    return Number.isFinite(t) ? value.toISOString() : String(value);
+  }
+  // mysql2 can return Buffers for BLOB/BINARY columns
+  if (typeof Buffer !== 'undefined' && Buffer.isBuffer(value)) {
+    const maxBytes = 32;
+    const preview = value.subarray(0, maxBytes).toString('hex');
+    const suffix = value.length > maxBytes ? '…' : '';
+    return `<Buffer len=${value.length} hex=${preview}${suffix}>`;
+  }
+  try {
+    return JSON.stringify(
+      value,
+      (_k, v) => (typeof v === 'bigint' ? v.toString() : v),
+      0
+    );
+  } catch {
+    return String(value);
+  }
+}
+
+function rowsToStructuredPlainText(rows) {
+  if (!Array.isArray(rows)) return formatCellValue(rows);
+  if (rows.length === 0) return 'Row count: 0\nRows: (none)';
+
+  /** @type {string[]} */
+  const columns = [];
+  const seen = new Set();
+
+  // Derive a stable column order from the first handful of rows.
+  for (const r of rows.slice(0, 50)) {
+    if (r && typeof r === 'object') {
+      for (const k of Object.keys(r)) {
+        if (!seen.has(k)) {
+          seen.add(k);
+          columns.push(k);
+        }
+      }
+    }
+  }
+
+  const lines = [];
+  lines.push(`Row count: ${rows.length}`);
+  if (columns.length) lines.push(`Columns: ${columns.join(', ')}`);
+  lines.push('Rows:');
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    lines.push(`- Row ${i + 1}:`);
+    if (!row || typeof row !== 'object') {
+      lines.push(`  value: ${formatCellValue(row)}`);
+      continue;
+    }
+
+    const keys = columns.length ? columns : Object.keys(row);
+    for (const k of keys) {
+      if (Object.prototype.hasOwnProperty.call(row, k)) {
+        lines.push(`  ${k}: ${formatCellValue(row[k])}`);
+      }
+    }
+  }
+
+  return lines.join('\n');
+}
+
+function escapeIdent(name) {
+  return String(name).replace(/`/g, '``');
+}
+
+function isSqlBareDefaultToken(s) {
+  const v = String(s).trim();
+  if (!v) return false;
+  // Common bare defaults / functions in MySQL.
+  if (/^(NULL|CURRENT_TIMESTAMP(?:\(\d+\))?)$/iu.test(v)) return true;
+  if (/^(NOW|UUID|UUID_TO_BIN|BIN_TO_UUID|CURRENT_DATE|CURRENT_TIME|LOCALTIME|LOCALTIMESTAMP)(\(\))?$/iu.test(v)) {
+    return true;
+  }
+  // Numeric literal
+  if (/^-?\d+(\.\d+)?$/u.test(v)) return true;
+  // Hex literal (0x...)
+  if (/^0x[0-9a-f]+$/iu.test(v)) return true;
+  return false;
+}
+
+function sqlLiteral(value) {
+  if (value === null || value === undefined) return 'NULL';
+  const s = String(value);
+  if (isSqlBareDefaultToken(s)) return s.trim();
+  // Quote as string literal
+  return `'${s.replace(/\\/g, '\\\\').replace(/'/g, "''")}'`;
+}
+
+function createTableSqlFromDescribeRows(table, rows) {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return `-- No columns found for table ${sqlLiteral(table)}\nCREATE TABLE \`${escapeIdent(
+      table
+    )}\` (\n  -- (no columns)\n);`;
+  }
+
+  // Expect rows like:
+  // { columnName, columnType, isNullable, columnDefault, columnKey, extra, ordinalPosition }
+  const cols = [...rows].sort(
+    (a, b) => Number(a?.ordinalPosition ?? 0) - Number(b?.ordinalPosition ?? 0)
+  );
+
+  /** @type {string[]} */
+  const columnLines = [];
+  /** @type {string[]} */
+  const pkCols = [];
+  /** @type {string[]} */
+  const uniqueCols = [];
+  /** @type {string[]} */
+  const indexCols = [];
+
+  for (const r of cols) {
+    const colName = r?.columnName;
+    const colType = r?.columnType;
+    const isNullable = String(r?.isNullable ?? '').toUpperCase() === 'YES';
+    const colDefault = r?.columnDefault;
+    const colKey = String(r?.columnKey ?? '').toUpperCase(); // PRI | UNI | MUL | ''
+    const extra = String(r?.extra ?? '');
+
+    const parts = [];
+    parts.push(`\`${escapeIdent(colName)}\``);
+    parts.push(String(colType || '').trim() || 'TEXT');
+    parts.push(isNullable ? 'NULL' : 'NOT NULL');
+
+    // MySQL often has implicit DEFAULT NULL when nullable; only emit default when present.
+    if (colDefault !== null && colDefault !== undefined) {
+      parts.push(`DEFAULT ${sqlLiteral(colDefault)}`);
+    }
+
+    if (extra) {
+      // Keep as-is (e.g. "auto_increment", "DEFAULT_GENERATED on update CURRENT_TIMESTAMP")
+      parts.push(extra.toUpperCase().includes('AUTO_INCREMENT') ? 'AUTO_INCREMENT' : extra);
+    }
+
+    columnLines.push(`  ${parts.join(' ')}`);
+
+    if (colKey === 'PRI') pkCols.push(String(colName));
+    else if (colKey === 'UNI') uniqueCols.push(String(colName));
+    else if (colKey === 'MUL') indexCols.push(String(colName));
+  }
+
+  /** @type {string[]} */
+  const constraintLines = [];
+  if (pkCols.length) {
+    const colsSql = pkCols.map((c) => `\`${escapeIdent(c)}\``).join(', ');
+    constraintLines.push(`  PRIMARY KEY (${colsSql})`);
+  }
+
+  // NOTE: INFORMATION_SCHEMA.COLUMNS doesn't provide full index definitions (composite indexes, names).
+  // We emit conservative per-column indexes for UNI/MUL.
+  for (const c of uniqueCols) {
+    constraintLines.push(
+      `  UNIQUE KEY \`uk_${escapeIdent(c)}\` (\`${escapeIdent(c)}\`)`
+    );
+  }
+  for (const c of indexCols) {
+    constraintLines.push(`  KEY \`idx_${escapeIdent(c)}\` (\`${escapeIdent(c)}\`)`);
+  }
+
+  const allLines = [...columnLines, ...constraintLines];
+  return [
+    `-- Generated from INFORMATION_SCHEMA.COLUMNS (may omit engine/charset/collation/foreign keys/checks/triggers/index shapes)`,
+    `CREATE TABLE \`${escapeIdent(table)}\` (`,
+    allLines.join(',\n'),
+    `);`,
+  ].join('\n');
+}
+
 function stripLeadingComments(sql) {
   let s = sql;
   s = s.replace(/^\s+/, '');
@@ -302,7 +481,7 @@ async function main() {
           content: [
             {
               type: 'text',
-              text: JSON.stringify({ table, columns: rows }, null, 2),
+              text: createTableSqlFromDescribeRows(table, rows),
             },
           ],
         };
@@ -334,23 +513,13 @@ async function main() {
       const effectiveSql = maybeApplyLimit(sql, maxRows);
 
       try {
-        const [rows, fields] = await pool.execute(effectiveSql, params);
+        const [rows] = await pool.execute(effectiveSql, params);
+        const text = `SQL:\n${effectiveSql}\n\n${rowsToStructuredPlainText(rows)}`;
         return {
           content: [
             {
               type: 'text',
-              text: JSON.stringify(
-                {
-                  sql: effectiveSql,
-                  rowCount: Array.isArray(rows) ? rows.length : undefined,
-                  rows,
-                  fields: Array.isArray(fields)
-                    ? fields.map((f) => ({ name: f.name, table: f.table, type: f.columnType }))
-                    : undefined,
-                },
-                null,
-                2
-              ),
+              text,
             },
           ],
         };

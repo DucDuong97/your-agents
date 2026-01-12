@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ModelInfo } from '@/lib/openrouter-client';
+import { ModelInfo } from '@/lib/openrouter';
 
 interface ModelSelectProps {
   models: ModelInfo[];

@@ -59,6 +59,8 @@ export default function AgentPage() {
         await agentDB.update(updatedAgent.id, {
           name: updatedAgent.name,
           systemPrompt: updatedAgent.systemPrompt,
+          knowledgeGenerationPrompt: updatedAgent.knowledgeGenerationPrompt ?? '',
+          knowledge: updatedAgent.knowledge ?? {},
           modelName: updatedAgent.modelName,
           provider: updatedAgent.provider,
           examplePrompts: updatedAgent.examplePrompts,

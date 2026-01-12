@@ -1,3 +1,5 @@
+import { Message } from "./db";
+
 // Define interface for model in the returned array
 export interface ModelInfo {
   id: string;
@@ -32,6 +34,7 @@ export interface ApiMessage {
 }
 
 export interface ChatCompletionOptions {
+  title?: string;
   messages: ApiMessage[];
   model: string;
   apiKey: string;
@@ -49,10 +52,71 @@ export interface ChatCompletionResponse {
   };
 }
 
+export type LlmCallStatus = 'success' | 'error';
+
+export interface LlmCallRecord {
+  id: string;
+  createdAt: string;
+  title: string;
+  provider: 'openrouter' | 'openai';
+  model: string;
+  isStreaming: boolean;
+  durationMs?: number;
+  requestBody: unknown;
+  response?: ChatCompletionResponse;
+  error?: string;
+  status: LlmCallStatus;
+}
+
+const LLM_CALLS_STORAGE_KEY = 'llm_calls';
+const LLM_CALLS_MAX_LENGTH = 20;
+
+function safeParseJson<T>(raw: string | null): T | null {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
+function getLlmCallsQueue(): LlmCallRecord[] {
+  if (typeof window === 'undefined') return [];
+  const parsed = safeParseJson<unknown>(window.localStorage.getItem(LLM_CALLS_STORAGE_KEY));
+  if (!Array.isArray(parsed)) return [];
+  return parsed as LlmCallRecord[];
+}
+
+function setLlmCallsQueue(queue: LlmCallRecord[]) {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(LLM_CALLS_STORAGE_KEY, JSON.stringify(queue));
+}
+
+function enqueueLlmCall(record: LlmCallRecord) {
+  if (typeof window === 'undefined') return;
+  try {
+    const existing = getLlmCallsQueue();
+    const next = [...existing, record].slice(-LLM_CALLS_MAX_LENGTH);
+    setLlmCallsQueue(next);
+  } catch {
+    // Best-effort logging; ignore storage quota / serialization errors.
+  }
+}
+
+export function toApiMessage(message: Message): ApiMessage {
+  return {
+    role: message.role,
+    content: message.content,
+  };
+}
+
 // Client-side function to generate chat completion
 export async function generateChatCompletion(options: ChatCompletionOptions): Promise<ChatCompletionResponse> {
+  const startMs = Date.now();
+  const callId = startMs.toString();
+
   try {
-    const { messages, model, apiKey, provider, isStreaming = false, onUpdate } = options;
+    const { title, messages, model, apiKey, provider, isStreaming = false, onUpdate } = options;
 
     // Check if the model is an Anthropic Claude model or other models that use max_completion_tokens
     const usesMaxCompletionTokens = 
@@ -66,8 +130,8 @@ export async function generateChatCompletion(options: ChatCompletionOptions): Pr
       messages: messages,
       stream: isStreaming,
       ...(usesMaxCompletionTokens 
-        ? { max_completion_tokens: 1000 } 
-        : { temperature: 0.7, max_tokens: 1000 })
+        ? { max_completion_tokens: 5000 } 
+        : { temperature: 0, max_tokens: 5000 })
     };
 
     if (provider === 'openrouter') {
@@ -90,10 +154,25 @@ export async function generateChatCompletion(options: ChatCompletionOptions): Pr
 
       if (!isStreaming) {
         const data = await response.json();
-        return {
+        const result = {
           content: data.choices[0].message.content,
           usage: data.usage,
         };
+
+        enqueueLlmCall({
+          id: callId,
+          createdAt: new Date().toISOString(),
+          title: title?.trim() || 'No title',
+          provider,
+          model,
+          isStreaming,
+          durationMs: Date.now() - startMs,
+          requestBody,
+          response: result,
+          status: 'success',
+        });
+
+        return result;
       }
 
       const reader = response.body?.getReader();
@@ -137,10 +216,25 @@ export async function generateChatCompletion(options: ChatCompletionOptions): Pr
         }
       }
 
-      return { 
+      const result = { 
         content: completeContent || 'No response generated',
         usage: totalTokens
       };
+
+      enqueueLlmCall({
+        id: callId,
+        createdAt: new Date().toISOString(),
+        title: title?.trim() || 'No title',
+        provider,
+        model,
+        isStreaming,
+        durationMs: Date.now() - startMs,
+        requestBody,
+        response: result,
+        status: 'success',
+      });
+
+      return result;
     } else {
       // Call OpenAI API with streaming
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -192,13 +286,58 @@ export async function generateChatCompletion(options: ChatCompletionOptions): Pr
         }
       }
 
-      return { 
+      const result = { 
         content: completeContent || 'No response generated',
         usage: totalTokens
       };
+
+      enqueueLlmCall({
+        id: callId,
+        createdAt: new Date().toISOString(),
+        title: title?.trim() || 'No title',
+        provider,
+        model,
+        isStreaming,
+        durationMs: Date.now() - startMs,
+        requestBody,
+        response: result,
+        status: 'success',
+      });
+
+      return result;
     }
   } catch (error) {
     console.error('Error generating chat completion:', error);
+    try {
+      const { title, messages, model, provider, isStreaming = false } = options;
+      const usesMaxCompletionTokens =
+        model.includes('claude') ||
+        model.includes('o3-') ||
+        model.includes('o1-');
+      const requestBody = {
+        model: model,
+        messages: messages,
+        stream: isStreaming,
+        ...(usesMaxCompletionTokens
+          ? { max_completion_tokens: 5000 }
+          : { temperature: 0, max_tokens: 5000 })
+      };
+
+      enqueueLlmCall({
+        id: callId,
+        createdAt: new Date().toISOString(),
+        title: title?.trim() || 'No title',
+        provider,
+        model,
+        isStreaming,
+        durationMs: Date.now() - startMs,
+        requestBody,
+        error: error instanceof Error ? error.message : String(error),
+        status: 'error',
+      });
+    } catch {
+      // ignore logging failures
+    }
     throw new Error('Failed to generate response from AI');
   }
 } 

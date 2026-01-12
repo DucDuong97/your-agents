@@ -1,4 +1,4 @@
-import type { ApiMessage, ChatCompletionResponse, ContentItem } from '@/lib/openrouter-client';
+import type { ApiMessage, ChatCompletionResponse, ContentItem } from '@/lib/openrouter';
 import { getModelById } from '@/lib/modelUtils';
 
 export interface MessagePrice {

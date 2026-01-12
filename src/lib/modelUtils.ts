@@ -1,4 +1,4 @@
-import { ModelInfo } from './openrouter-client';
+import { ModelInfo } from './openrouter';
 import modelData from '@/assets/modelData.json';
 
 /**

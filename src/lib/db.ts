@@ -1,3 +1,4 @@
+import { MysqlToolCallsByTask, MysqlResultsByTask } from '@/agents/mysql';
 import { nanoid } from 'nanoid';
 
 // Define types for our data
@@ -16,8 +17,8 @@ export interface Message {
     createdAt: string;
     reasoning: string;
     tasks: string[];
-    toolCallsByTask: unknown[];
-    resultsByTask: unknown[];
+    toolCallsByTask:  MysqlToolCallsByTask[];
+    resultsByTask: MysqlResultsByTask[];
     error: string | null;
   };
   price?: {
@@ -55,6 +56,8 @@ export interface ChatAgent {
     taskPrompt?: string; // Custom prompt for scheduled notifications
     lastSent?: string; // ISO date string
   };
+  knowledgeGenerationPrompt?: string;
+  knowledge?: Record<string, string[]>;
   /** If enabled, this agent can use the local MySQL MCP server (see `mcp/sql.js`). */
   useMysqlMcp?: boolean;
   createdAt: string;

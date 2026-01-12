@@ -77,9 +77,11 @@ const CodeBlock = ({ language, code }: { language: string; code: string }) => {
 };
 
 export default function MessageList({ messages, isGenerating, streamingContent, onAssistantMessageClick }: MessageListProps) {
+  const displayMessages = messages.filter((message) => message.role !== 'system');
+
   return (
     <div className="space-y-4 sm:space-y-6 px-2 sm:px-4 py-2">
-      {messages.map((message) => (
+      {displayMessages.map((message) => (
         <div
           key={message.id}
           className={[

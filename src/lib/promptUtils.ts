@@ -1,4 +1,4 @@
-import { generateChatCompletion } from './openrouter-client';
+import { generateChatCompletion } from './openrouter';
 import { getGlobalConfig } from './storage';
 
 /**
@@ -48,6 +48,7 @@ Example format: ["Prompt 1", "Prompt 2", "Prompt 3", "Prompt 4"]
 
     // Call the API to generate example prompts
     const response = await generateChatCompletion({
+      title: 'Example Prompts Generation',
       messages: [
         { role: 'system', content: 'You are a helpful assistant that generates example prompts.' },
         { role: 'user', content: promptGenerationMessage }
@@ -271,6 +272,7 @@ Return ONLY the title text with no quotes, explanations, or additional formattin
 
     // Call the API to generate a title using GPT-4o
     const response = await generateChatCompletion({
+      title: 'Chat Title Generation',
       messages: [
         { role: 'system', content: 'You are a helpful assistant that generates concise, descriptive titles.' },
         { role: 'user', content: titleGenerationMessage }
