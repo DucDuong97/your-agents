@@ -7,6 +7,19 @@ export interface Message {
   content: string;
   createdAt: string;
   rawContent?: string; // For storing structured content (like image data) in JSON format
+  /**
+   * Optional persisted agent/tool execution snapshot (e.g. MySQL MCP run) for this assistant message.
+   * Stored separately from `rawContent` so image payloads and agent runs don't collide.
+   */
+  agentRunSnapshot?: {
+    version: 1;
+    createdAt: string;
+    reasoning: string;
+    tasks: string[];
+    toolCallsByTask: unknown[];
+    resultsByTask: unknown[];
+    error: string | null;
+  };
   price?: {
     promptTokens?: number;
     completionTokens?: number;

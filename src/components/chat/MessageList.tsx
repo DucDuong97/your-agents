@@ -23,6 +23,7 @@ interface MessageListProps {
   messages: Message[];
   isGenerating: boolean;
   streamingContent: string | null;
+  onAssistantMessageClick?: (message: Message) => void;
 }
 
 // Create a separate CodeBlock component to handle the tooltip state
@@ -75,11 +76,24 @@ const CodeBlock = ({ language, code }: { language: string; code: string }) => {
   );
 };
 
-export default function MessageList({ messages, isGenerating, streamingContent }: MessageListProps) {
+export default function MessageList({ messages, isGenerating, streamingContent, onAssistantMessageClick }: MessageListProps) {
   return (
     <div className="space-y-4 sm:space-y-6 px-2 sm:px-4 py-2">
       {messages.map((message) => (
-        <div key={message.id} className="message-container">
+        <div
+          key={message.id}
+          className={[
+            'message-container',
+            message.role === 'assistant' && Boolean(message.agentRunSnapshot)
+              ? 'cursor-pointer'
+              : '',
+          ].join(' ')}
+          onClick={() => {
+            if (message.role !== 'assistant') return;
+            if (!message.agentRunSnapshot) return;
+            onAssistantMessageClick?.(message);
+          }}
+        >
           <div className="flex items-center gap-2 mb-1">
             <span className={`font-semibold text-sm sm:text-base ${
               message.role === 'user' 

@@ -15,7 +15,7 @@ import AgentModal from '@/components/chat/AgentModal';
 import { convertImageToBase64, supportsImages } from '@/lib/imageUtils';
 import { useApiKey } from '@/hooks/useApiKey';
 import { calculateChatCompletionPrice } from '@/lib/costUtils';
-import { useMysqlMcp } from '@/agents/mysql';
+import { AgentRunSnapshot, useMysqlMcp } from '@/agents/mysql';
 import AgentSidebar from '@/components/agent/AgentSidebar';
 import Header from '@/components/chat/Header';
 
@@ -71,6 +71,10 @@ export default function SessionPage() {
   const [showAgentModal, setShowAgentModal] = useState(false);
   const mysqlMcp = useMysqlMcp({isTesting: false});
   const [isAgentSidebarOpen, setIsAgentSidebarOpen] = useState(false);
+  const [selectedRun, setSelectedAgentRun] = useState<{
+    messageId: string;
+    run: AgentRunSnapshot;
+  } | null>(null);
 
   // Open sidebar after planning succeeds (i.e. tasks exist). Exclude planning time by not opening until tasks are set.
   useEffect(() => {
@@ -78,6 +82,22 @@ export default function SessionPage() {
       setIsAgentSidebarOpen(true);
     }
   }, [selectedAgent?.useMysqlMcp, mysqlMcp.tasks.length]);
+
+  // Prevent reopening older runs while executing; keep sidebar locked to the live run.
+  useEffect(() => {
+    if (mysqlMcp.isExecuting) {
+      setSelectedAgentRun(null);
+      setIsAgentSidebarOpen(true);
+    }
+  }, [mysqlMcp.isExecuting]);
+
+  const handleAssistantMessageClick = useCallback((message: Message) => {
+    if (mysqlMcp.isExecuting) return; // don't reopen historical runs during execution
+    const run = message.agentRunSnapshot as AgentRunSnapshot | undefined;
+    if (!run || run.version !== 1) return;
+    setSelectedAgentRun({ messageId: message.id, run });
+    setIsAgentSidebarOpen(true);
+  }, [mysqlMcp.isExecuting]);
 
   // Check if API key is available for the selected provider
   const { getApiKeyForAgentOrRedirect } = useApiKey();
@@ -292,15 +312,17 @@ export default function SessionPage() {
     
     try {
       let apiMessages = buildApiMessages(updatedMessages);
+      let agentRunSnapshot: AgentRunSnapshot | null = null;
 
       // Optional: orchestrate MySQL MCP tool calls and inject results as a synthetic system message
       if (selectedAgent.useMysqlMcp) {
         try {
-          const { toolSystemMessage } = await mysqlMcp.run({
+          const { toolSystemMessage, runSnapshot } = await mysqlMcp.run({
             apiMessages,
             agent: selectedAgent,
             apiKey: apiKey!,
           });
+          agentRunSnapshot = runSnapshot;
 
           if (toolSystemMessage) {
             apiMessages = [apiMessages[0], toolSystemMessage, ...apiMessages.slice(1)];
@@ -326,6 +348,7 @@ export default function SessionPage() {
         role: 'assistant',
         content: response.content,
         createdAt: new Date().toISOString(),
+        agentRunSnapshot: agentRunSnapshot ?? undefined,
         price: calculateChatCompletionPrice({
           apiMessages,
           response,
@@ -437,6 +460,7 @@ export default function SessionPage() {
                   messages={messages}
                   isGenerating={isGenerating}
                   streamingContent={streamingContent}
+                  onAssistantMessageClick={handleAssistantMessageClick}
                 />
               )}
             </div>
@@ -456,32 +480,17 @@ export default function SessionPage() {
         </div>
 
         {/* Right sidebar (desktop) + drawer (mobile) */}
-        {selectedAgent?.useMysqlMcp && (mysqlMcp.tasks.length > 0 || mysqlMcp.resultsByTask.length > 0) && (
+        {selectedAgent?.useMysqlMcp && (mysqlMcp.reasoning.length > 0 || selectedRun) && (
           <div className="hidden md:block">
             <AgentSidebar
               open={isAgentSidebarOpen}
               onClose={() => setIsAgentSidebarOpen(false)}
               isExecuting={mysqlMcp.isExecuting}
-              error={mysqlMcp.error}
-              reasoning={mysqlMcp.reasoning}
-              tasks={mysqlMcp.tasks}
-              toolCallsByTask={mysqlMcp.toolCallsByTask}
-              resultsByTask={mysqlMcp.resultsByTask}
-            />
-          </div>
-        )}
-
-        {selectedAgent?.useMysqlMcp && (mysqlMcp.tasks.length > 0 || mysqlMcp.resultsByTask.length > 0) && (
-          <div className="md:hidden">
-            <AgentSidebar
-              open={isAgentSidebarOpen}
-              onClose={() => setIsAgentSidebarOpen(false)}
-              isExecuting={mysqlMcp.isExecuting}
-              error={mysqlMcp.error}
-              reasoning={mysqlMcp.reasoning}
-              tasks={mysqlMcp.tasks}
-              toolCallsByTask={mysqlMcp.toolCallsByTask}
-              resultsByTask={mysqlMcp.resultsByTask}
+              error={selectedRun ? selectedRun.run.error : mysqlMcp.error}
+              reasoning={selectedRun ? selectedRun.run.reasoning : mysqlMcp.reasoning}
+              tasks={selectedRun ? selectedRun.run.tasks : mysqlMcp.tasks}
+              toolCallsByTask={selectedRun ? selectedRun.run.toolCallsByTask : mysqlMcp.toolCallsByTask}
+              resultsByTask={selectedRun ? selectedRun.run.resultsByTask : mysqlMcp.resultsByTask}
             />
           </div>
         )}
