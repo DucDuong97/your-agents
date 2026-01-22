@@ -238,6 +238,7 @@ export default function SessionPage() {
         apiKey: apiKey!,
         provider: selectedAgent.provider,
         isStreaming: true,
+        maxTokens: 2000,
         onUpdate: (content) => {
           setStreamingContent(content);
         }

@@ -207,11 +207,24 @@ function parseKeyValueEntry(raw: string): { key: string; value: string } | null 
   return { key, value };
 }
 
+function parseKeyValueEntry2(raw: string): { key: string; value: string } | null {
+  const text = stripFences(raw).split(':');
+  if (text.length < 2) return null;
+
+  const key = text[0].trim();
+  if (!/^[a-zA-Z0-9_-]+$/.test(key)) return null;
+
+  const value = text.slice(1).join(':').trim();
+  if (!value) return null;
+
+  return { key, value };
+}
+
 function appendKnowledge(
   existing: Record<string, string[]> | undefined,
   entryRaw: string
 ): Record<string, string[]> {
-  const parsed = parseKeyValueEntry(entryRaw);
+  const parsed = parseKeyValueEntry(entryRaw) || parseKeyValueEntry2(entryRaw);
   if (!parsed) return existing ?? {};
 
   const next: Record<string, string[]> = { ...(existing ?? {}) };
@@ -306,15 +319,15 @@ The knowledge output should follow the following prompt:
 
 const KNOWLEDGE_GENERATION_USER_MESSAGE = `
 <UserMessage>
-  {{user_message}}
+{{user_message}}
 </UserMessage>
 
 <AssistantResponse>
-  {{assistant_response}}
+{{assistant_response}}
 </AssistantResponse>
 
 <ToolCalls>
-  {{tool_calls}}
+{{tool_calls}}
 </ToolCalls>
 `;
 

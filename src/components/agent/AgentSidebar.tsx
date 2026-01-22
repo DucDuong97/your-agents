@@ -63,6 +63,15 @@ export default function AgentSidebar(props: Props) {
 
   const [expandedCallKeys, setExpandedCallKeys] = useState<Record<string, boolean>>({});
 
+  const feedTasks = useMemo(() => {
+    // Only show tasks in the execution feed once they've started (calls planned) or completed (results exist).
+    // This hides "future"/pending tasks that haven't executed yet.
+    const started = new Set<string>();
+    for (const t of toolCallsByTask) started.add(t.task);
+    for (const t of resultsByTask) started.add(t.task);
+    return tasks.filter((t) => started.has(t));
+  }, [tasks, toolCallsByTask, resultsByTask]);
+
   const finishedTasks = useMemo(() => {
     if (!open) return new Set<string>();
     const finished = new Set<string>();
@@ -219,9 +228,10 @@ export default function AgentSidebar(props: Props) {
 
           {/* Execution feed */}
           <div className="px-4 py-3 space-y-4">
-            {tasks.map((task, idx) => {
+            {feedTasks.map((task, idx) => {
               const calls = toolCallsByTask.find((t) => t.task === task)?.calls ?? [];
               const results = resultsByTask.find((t) => t.task === task)?.results ?? [];
+              const taskNumber = Math.max(1, tasks.indexOf(task) + 1);
               const currentRunningIndex =
                 isExecuting && calls.length > 0 ? Math.min(results.length, calls.length - 1) : -1;
 
@@ -230,10 +240,10 @@ export default function AgentSidebar(props: Props) {
                   key={`${idx}-${task}`}
                   className={[
                     'py-3',
-                    idx < tasks.length - 1 ? 'border-b border-gray-200 dark:border-gray-800' : '',
+                    idx < feedTasks.length - 1 ? 'border-b border-gray-200 dark:border-gray-800' : '',
                   ].join(' ')}
                 >
-                  <div className="text-xs font-semibold text-gray-900 dark:text-white">Task {idx + 1}</div>
+                  <div className="text-xs font-semibold text-gray-900 dark:text-white">Task {taskNumber}</div>
                   <div className="mt-1 text-xs text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{task}</div>
 
                   <div className="mt-3 space-y-2">

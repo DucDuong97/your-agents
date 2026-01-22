@@ -40,6 +40,7 @@ export interface ChatCompletionOptions {
   apiKey: string;
   provider: 'openrouter' | 'openai';
   isStreaming?: boolean;
+  maxTokens?: number;
   onUpdate?: (content: string) => void;
 }
 
@@ -116,7 +117,7 @@ export async function generateChatCompletion(options: ChatCompletionOptions): Pr
   const callId = startMs.toString();
 
   try {
-    const { title, messages, model, apiKey, provider, isStreaming = false, onUpdate } = options;
+    const { title, messages, model, apiKey, provider, isStreaming = false, onUpdate, maxTokens } = options;
 
     // Check if the model is an Anthropic Claude model or other models that use max_completion_tokens
     const usesMaxCompletionTokens = 
@@ -130,8 +131,8 @@ export async function generateChatCompletion(options: ChatCompletionOptions): Pr
       messages: messages,
       stream: isStreaming,
       ...(usesMaxCompletionTokens 
-        ? { max_completion_tokens: 5000 } 
-        : { temperature: 0, max_tokens: 5000 })
+        ? { temperature: 0, max_completion_tokens: maxTokens || 5000 } 
+        : { temperature: 0, max_tokens: maxTokens || 5000 })
     };
 
     if (provider === 'openrouter') {
