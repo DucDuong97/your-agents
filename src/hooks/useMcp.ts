@@ -4,7 +4,6 @@ import { useCallback, useState } from 'react';
 import type { ApiMessage } from '@/lib/openrouter';
 import { generateChatCompletion } from '@/lib/openrouter';
 import type { ChatAgent, Message } from '@/lib/db';
-import { SqlMcpClient } from '@/mcp/sql';
 
 export type MysqlToolName = 'mysql_query' | 'mysql_list_tables' | 'mysql_describe_table';
 
@@ -362,7 +361,6 @@ export async function planMysqlToolCallsForTask(args: {
         task,
         conversation: context,
         priorResults,
-        toolSchemas: toolSchemas ?? [],
       },
       null,
       2
@@ -390,27 +388,37 @@ export async function runMysqlToolCallsDirect(args: {
   const { calls } = args;
   if (!calls.length) return [];
 
-  const client = new SqlMcpClient();
-  await client.connect();
-  try {
-    const results: MysqlToolResult[] = [];
-    for (const call of calls) {
-      try {
-        const result = await client.callTool(call.name, call.arguments);
-        results.push({ name: call.name, arguments: call.arguments, ok: true, result: result as { content: MysqlToolResultContent[] } });
-      } catch (e) {
-        results.push({
-          name: call.name,
-          arguments: call.arguments,
-          ok: false,
-          error: e instanceof Error ? e.message : String(e),
-        });
-      }
+  const TOOL_CALL_TIMEOUT_MS = 10_000;
+  const results: MysqlToolResult[] = [];
+  for (const call of calls) {
+    try {
+      const result = await withTimeout(
+        mysqlHttpCallTool(call.name, call.arguments),
+        TOOL_CALL_TIMEOUT_MS,
+        `Tool call timed out after ${TOOL_CALL_TIMEOUT_MS / 1000}s: ${call.name}`
+      );
+      results.push({ name: call.name, arguments: call.arguments, ok: true, result });
+    } catch (e) {
+      results.push({
+        name: call.name,
+        arguments: call.arguments,
+        ok: false,
+        error: e instanceof Error ? e.message : String(e),
+      });
     }
-    return results;
-  } finally {
-    await client.close();
   }
+  return results;
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, timeoutMessage: string): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  const timeout = new Promise<T>((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
+  });
+
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timeoutId) clearTimeout(timeoutId);
+  });
 }
 
 export function buildMysqlToolSystemMessage(args: {
@@ -429,6 +437,67 @@ export function buildMysqlToolSystemMessage(args: {
       JSON.stringify({ tasks, resultsByTask }, null, 2),
     ].join('\n'),
   };
+}
+
+type MysqlHttpToolSchema = {
+  name: string;
+  description?: string;
+  inputSchema?: unknown;
+};
+
+function getMysqlHttpBaseUrl(): string {
+  // Client-side: call same-origin Next route.
+  return '/api/mcp/sql';
+}
+
+async function mysqlHttpListTools(): Promise<MysqlHttpToolSchema[] | null> {
+  try {
+    const res = await fetch(`${getMysqlHttpBaseUrl()}?tool=list`, { method: 'GET' });
+    if (!res.ok) return null;
+    const json = (await res.json()) as { tools?: unknown };
+    if (!Array.isArray(json.tools)) return null;
+
+    const normalized: MysqlHttpToolSchema[] = [];
+    for (const t of json.tools) {
+      if (!t || typeof t !== 'object') continue;
+      const tool = t as { name?: unknown; description?: unknown; inputSchema?: unknown };
+      if (typeof tool.name !== 'string') continue;
+      normalized.push({
+        name: tool.name,
+        description: typeof tool.description === 'string' ? tool.description : undefined,
+        inputSchema: tool.inputSchema,
+      });
+    }
+
+    const allow = new Set<MysqlToolName>(['mysql_query', 'mysql_list_tables', 'mysql_describe_table']);
+    return normalized.filter((t) => allow.has(t.name as MysqlToolName));
+  } catch {
+    return null;
+  }
+}
+
+async function mysqlHttpCallTool(
+  name: MysqlToolName,
+  args: Record<string, unknown>
+): Promise<{ content: MysqlToolResultContent[] }> {
+  const res = await fetch(getMysqlHttpBaseUrl(), {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name, arguments: args }),
+  });
+
+  const data = (await res.json().catch(() => null)) as
+    | { content?: MysqlToolResultContent[]; isError?: boolean }
+    | null;
+
+  if (!res.ok || !data || !Array.isArray(data.content) || data.isError) {
+    const msg =
+      (data?.content?.[0]?.text && String(data.content[0].text)) ||
+      `HTTP error calling ${name}: ${res.status}`;
+    throw new Error(msg);
+  }
+
+  return { content: data.content };
 }
 
 function safeJsonParse(s: string): unknown {
@@ -532,33 +601,8 @@ type MysqlMcpToolSchema = {
 };
 
 async function fetchMysqlMcpToolSchemas(): Promise<MysqlMcpToolSchema[] | null> {
-  const client = new SqlMcpClient();
-  try {
-    await client.connect();
-    const res = (await client.listTools()) as unknown;
-    const tools = (res as { tools?: unknown })?.tools;
-    if (!Array.isArray(tools)) return null;
-
-    const normalized: MysqlMcpToolSchema[] = [];
-    for (const t of tools) {
-      if (!t || typeof t !== 'object') continue;
-      const tool = t as { name?: unknown; description?: unknown; inputSchema?: unknown };
-      if (typeof tool.name !== 'string') continue;
-      normalized.push({
-        name: tool.name,
-        description: typeof tool.description === 'string' ? tool.description : undefined,
-        inputSchema: tool.inputSchema,
-      });
-    }
-
-    // Keep only the MySQL tools we care about, in a stable order.
-    const allow = new Set<MysqlToolName>(['mysql_query', 'mysql_list_tables', 'mysql_describe_table']);
-    return normalized.filter((t) => allow.has(t.name as MysqlToolName));
-  } catch {
-    return null;
-  } finally {
-    await client.close();
-  }
+  // Backwards-compatible name, now sourced from the HTTP tool endpoint.
+  return await mysqlHttpListTools();
 }
 
 
@@ -586,11 +630,10 @@ Return ONLY strict JSON of the form:
 { "calls": Array<{ "name": "tool_name", "arguments": object }> }
 Rules:
 - Keep calls <= 3.
+- Do not repeat tool calls from previous tasks.
 - You will be given the tool schemas (from MCP tools/list). The call.arguments MUST match the tool inputSchema exactly:
   - Do not invent argument names.
   - Do not include extra keys (additionalProperties is false).
   - Only include optional keys when needed.
-- Use mysql_list_tables/mysql_describe_table to discover schema.
-- Use mysql_query only for read-only queries.
 - If no tool calls are needed for this task, return {"calls":[]}.
 `;
