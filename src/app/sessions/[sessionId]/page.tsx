@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { chatDB, agentDB, Chat as ChatType, ChatAgent, Message } from '@/lib/db';
 import MessageList from '@/components/chat/MessageList';
@@ -19,6 +19,7 @@ import Header from '@/components/chat/Header';
 import { useTitleGenerator } from '@/hooks/useTitleGenerator';
 import { useAiMessagesBuilder } from '@/hooks/useAiMessagesBuilder';
 import { useKnowledgeManager } from '@/hooks/useKnowledgeManager';
+import { AddKnowledgeConfirmationModal } from '@/components/chat/KnowledgeEditor';
 
 async function buildUserMessage(data: { message: string; image?: File }): Promise<Message> {
   let contentForDisplay = data.message;
@@ -58,17 +59,20 @@ export default function SessionPage() {
   const router = useRouter();
   const params = useParams();
   const sessionId = params.sessionId as string;
-  
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<ChatAgent | null>(null);
   const [currentChat, setCurrentChat] = useState<ChatType | null>(null);
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [streamingContent, setStreamingContent] = useState<string | null>(null);
-  
+
   const { register, handleSubmit, reset, setValue } = useForm<{ message: string; image?: File }>();
   const [loading, setLoading] = useState(true);
   const [showAgentModal, setShowAgentModal] = useState(false);
+
+  // Throttle message sending: require at least 5s between submissions
+  const lastSendRef = useRef<number | null>(null);
 
   const mysqlMcp = useMcp({isTesting: false});
   const [isAgentSidebarOpen, setIsAgentSidebarOpen] = useState(false);
@@ -77,7 +81,13 @@ export default function SessionPage() {
     run: AgentRunSnapshot;
   } | null>(null);
 
-  const { generateKnowledge, buildKnowledgeSystemMessage } = useKnowledgeManager(selectedAgent);
+  const [showKnowledgeConfirmation, setShowKnowledgeConfirmation] = useState(false);
+  const {
+    generateKnowledge,
+    buildKnowledgeSystemMessage,
+    confirmLastGeneratedKnowledge,
+    lastGeneratedEntry,
+  } = useKnowledgeManager(selectedAgent);
 
   // Open sidebar after planning succeeds (i.e. tasks exist). Exclude planning time by not opening until tasks are set.
   useEffect(() => {
@@ -93,6 +103,11 @@ export default function SessionPage() {
       setIsAgentSidebarOpen(true);
     }
   }, [mysqlMcp.isExecuting]);
+
+  useEffect(() => {
+    if (!selectedAgent || !lastGeneratedEntry) return;
+    setShowKnowledgeConfirmation(true);
+  }, [selectedAgent, lastGeneratedEntry]);
 
   const handleAssistantMessageClick = useCallback((message: Message) => {
     if (mysqlMcp.isExecuting) return; // don't reopen historical runs during execution
@@ -169,6 +184,14 @@ export default function SessionPage() {
   }, [currentChat]);
 
   const onSendMessage = async (data: { message: string; image?: File }) => {
+    const now = Date.now();
+    if (lastSendRef.current !== null && now - lastSendRef.current < 5000) {
+      console.warn('onSendMessage throttled: called too soon after previous send');
+      return;
+    }
+    lastSendRef.current = now;
+
+    console.log('onSendMessage', data);
     if (
       (!data.message.trim() && !data.image) 
       || isGenerating 
@@ -192,31 +215,36 @@ export default function SessionPage() {
     }
     
     // Add message to current chat
-    let updatedMessages = [...messages, userMessage];
+    const currentMessages = messages.slice(-10);
+    let updatedMessages = [...currentMessages, userMessage];
     await saveMessages(updatedMessages);
 
     setIsGenerating(true);
     setStreamingContent('');
     
     try {
-      let apiMessages: ApiMessage[] = await buildApiMessages(updatedMessages);
+      let apiMessages: ApiMessage[] = buildApiMessages(updatedMessages);
       let agentRunSnapshot: AgentRunSnapshot | null = null;
       
       // Optional: inject relevant stored knowledge as a system message
-      if (selectedAgent.knowledgeGenerationPrompt && selectedAgent.knowledge?.length) {
+      if (selectedAgent.knowledgeGenerationPrompt && Object.keys(selectedAgent.knowledge ?? {}).length > 0) {
+        console.log('Building knowledge system message...');
         const { knowledgeSystemMessage } = await buildKnowledgeSystemMessage(apiMessages);
 
         if (knowledgeSystemMessage) {
           updatedMessages = [...updatedMessages, knowledgeSystemMessage];
-          apiMessages = [...apiMessages, toApiMessage(knowledgeSystemMessage)];
+          const apiMessage = toApiMessage(knowledgeSystemMessage);
+          if (apiMessage) {
+            apiMessages = [...apiMessages, apiMessage];
+          }
 
           await saveMessages(updatedMessages);
-
         }
       }
 
       // Optional: orchestrate MySQL MCP tool calls and inject results as a synthetic system message
       if (selectedAgent.useMysqlMcp) {
+        console.log('Running MySQL MCP...');
         const { toolSystemMessage, runSnapshot } = await mysqlMcp.run({
           apiMessages, agent: selectedAgent, apiKey: apiKey!,
         });
@@ -224,13 +252,17 @@ export default function SessionPage() {
 
         if (toolSystemMessage) {
           updatedMessages = [...updatedMessages, toolSystemMessage];
-          apiMessages = [...apiMessages, toApiMessage(toolSystemMessage)];
+          const apiMessage = toApiMessage(toolSystemMessage);
+          if (apiMessage) {
+            apiMessages = [...apiMessages, apiMessage];
+          }
 
           await saveMessages(updatedMessages);
 
         }
       }
       
+      console.log('Generating response...');
       const response = await generateChatCompletion({
         title: 'Assistant Response',
         messages: apiMessages,
@@ -264,6 +296,7 @@ export default function SessionPage() {
       setStreamingContent(null);
 
       if (selectedAgent.knowledgeGenerationPrompt) {
+        console.log('Generating knowledge...');
         await generateKnowledge(finalMessages);
       }
     } catch (error) {
@@ -306,6 +339,29 @@ export default function SessionPage() {
       setShowAgentModal(true);
     }
   };
+
+  const handleConfirmKnowledge = useCallback(async (key: string, value: string) => {
+    if (!selectedAgent || !lastGeneratedEntry) {
+      setShowKnowledgeConfirmation(false);
+      return;
+    }
+
+    try {
+      const updatedAgent = await confirmLastGeneratedKnowledge(key, value);
+      if (updatedAgent) {
+        setSelectedAgent(updatedAgent);
+      }
+    } catch (error) {
+      console.error('Failed to update knowledge after confirmation:', error);
+      alert('Failed to save updated knowledge. Please try again.');
+    } finally {
+      setShowKnowledgeConfirmation(false);
+    }
+  }, [selectedAgent, lastGeneratedEntry, confirmLastGeneratedKnowledge]);
+
+  const handleCancelKnowledge = useCallback(() => {
+    setShowKnowledgeConfirmation(false);
+  }, []);
   
   const handleAgentUpdate = async (agentData: Omit<ChatAgent, 'id' | 'createdAt' | 'updatedAt'>) => {
     try {
@@ -397,6 +453,16 @@ export default function SessionPage() {
           initialAgent={selectedAgent}
           onSubmit={handleAgentUpdate}
           onClose={() => setShowAgentModal(false)}
+        />
+      )}
+
+      {showKnowledgeConfirmation && lastGeneratedEntry && (
+        <AddKnowledgeConfirmationModal
+          open={showKnowledgeConfirmation}
+          initialKey={lastGeneratedEntry.key}
+          initialValue={lastGeneratedEntry.value}
+          onCancel={handleCancelKnowledge}
+          onConfirm={handleConfirmKnowledge}
         />
       )}
     </div>

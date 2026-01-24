@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 
 import type { ChatAgent, Message } from '@/lib/db';
-import { type ApiMessage } from '@/lib/openrouter';
+import { toApiMessage, type ApiMessage } from '@/lib/openrouter';
 import { getGlobalConfig } from '@/lib/storage';
 
 export function useAiMessagesBuilder(selectedAgent: ChatAgent | null) {
@@ -33,22 +33,9 @@ export function useAiMessagesBuilder(selectedAgent: ChatAgent | null) {
 
       // Add the chat history
       for (const msg of messagesForApi) {
-        // Skip system messages as we already added our enhanced system prompt
-        if (msg.role === 'system') continue;
-
-        // Handle messages with images
-        if (msg.rawContent && msg.role === 'user') {
-          // If the message has structured content (for images), use it
-          apiMessages.push({
-            role: msg.role,
-            content: JSON.parse(msg.rawContent),
-          });
-        } else {
-          // Otherwise use the regular content
-          apiMessages.push({
-            role: msg.role,
-            content: msg.content,
-          });
+        const apiMessage = toApiMessage(msg);
+        if (apiMessage) {
+          apiMessages.push(apiMessage);
         }
       }
 

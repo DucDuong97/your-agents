@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import type { MysqlPlannedCall, MysqlResultsByTask, MysqlToolCallsByTask, MysqlToolResult, MysqlToolResultContent } from '@/hooks/useMcp';
+import type { McpPlannedCall, McpResultsByTask, McpToolCallsByTask, McpToolResult, McpToolResultContent } from '@/hooks/useMcp';
 
 type Props = {
   open: boolean;
@@ -16,8 +16,8 @@ type Props = {
   tasks: string[];
 
   // Tool execution
-  toolCallsByTask: MysqlToolCallsByTask[];
-  resultsByTask: MysqlResultsByTask[];
+  toolCallsByTask: McpToolCallsByTask[];
+  resultsByTask: McpResultsByTask[];
 };
 
 function safeStringify(value: unknown): string {
@@ -50,7 +50,7 @@ function formatMaybeJson(value: unknown): { formatted: string; isJson: boolean }
   }
 }
 
-function getTaskStatus(task: string, resultsByTask: MysqlResultsByTask[], toolCallsByTask: MysqlToolCallsByTask[]) {
+function getTaskStatus(task: string, resultsByTask: McpResultsByTask[], toolCallsByTask: McpToolCallsByTask[]) {
   const hasResults = resultsByTask.some((t) => t.task === task);
   if (hasResults) return 'done';
   const hasCalls = toolCallsByTask.some((t) => t.task === task && t.calls.length > 0);
@@ -196,7 +196,7 @@ export default function AgentSidebar(props: Props) {
                       const done = status === 'done';
                       return (
                         <div key={`${idx}-${task}`} className="flex items-start gap-2">
-                          <div className="mt-[2px] h-4 w-4 flex items-center justify-center rounded border border-gray-300 dark:border-gray-700 text-[10px]">
+                          <div className="mt-[2px] h-4 w-4 min-w-4 flex-shrink-0 flex items-center justify-center rounded border border-gray-300 dark:border-gray-700 text-[10px]">
                             {done ? '✓' : ''}
                           </div>
                           <div
@@ -250,8 +250,8 @@ export default function AgentSidebar(props: Props) {
                     {calls.length === 0 ? (
                       <div className="text-xs text-gray-500 dark:text-gray-400">No tool calls.</div>
                     ) : (
-                      calls.map((c: MysqlPlannedCall, i: number) => {
-                        const r: MysqlToolResult = results[i];
+                      calls.map((c: McpPlannedCall, i: number) => {
+                        const r: McpToolResult = results[i];
                         const isCallExecuting = isExecuting && !r && i === currentRunningIndex;
                         const isCallError = Boolean(r && !r.ok);
                         const callKey = `${task}::${i}`;
@@ -328,7 +328,7 @@ export default function AgentSidebar(props: Props) {
                                     </div>
                                   )}
                                   {r && r.ok && (
-                                    r.result?.content.map((r: MysqlToolResultContent, idx: number) => (
+                                    r.result?.content.map((r: McpToolResultContent, idx: number) => (
                                       <pre key={idx} className="mt-1 text-[11px] bg-gray-50 dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded p-2 overflow-x-auto">
                                         {formatMaybeJson(r.text).formatted}
                                       </pre>

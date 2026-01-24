@@ -5,41 +5,41 @@ import type { ApiMessage } from '@/lib/openrouter';
 import { generateChatCompletion } from '@/lib/openrouter';
 import type { ChatAgent, Message } from '@/lib/db';
 
-export type MysqlToolName = 'mysql_query' | 'mysql_list_tables' | 'mysql_describe_table';
+export type McpToolName = 'mysql_query' | 'mysql_list_tables' | 'mysql_describe_table';
 
-export type MysqlPlannedCall = {
-  name: MysqlToolName;
+export type McpPlannedCall = {
+  name: McpToolName;
   arguments: Record<string, unknown>;
 };
 
-export type MysqlPlan =
+export type McpPlan =
   | { needed: false; tasks: []; reasoning: string }
   | { needed: true; tasks: string[]; reasoning: string };
 
-export type MysqlToolResultContent = {
+export type McpToolResultContent = {
   type: string;
   text: string;
 };
 
-export type MysqlToolResult = {
-  name: MysqlToolName;
+export type McpToolResult = {
+  name: McpToolName;
   arguments: Record<string, unknown>;
   ok: boolean;
   result?: {
-    content: MysqlToolResultContent[];
+    content: McpToolResultContent[];
   };
   error?: string;
 };
 
-export type MysqlToolCallsByTask = {
+export type McpToolCallsByTask = {
   task: string;
-  calls: MysqlPlannedCall[];
+  calls: McpPlannedCall[];
 };
 
-export type MysqlResultsByTask = {
+export type McpResultsByTask = {
   task: string;
-  calls: MysqlPlannedCall[];
-  results: MysqlToolResult[];
+  calls: McpPlannedCall[];
+  results: McpToolResult[];
 };
 
 export type AgentRunSnapshot = {
@@ -47,8 +47,8 @@ export type AgentRunSnapshot = {
   createdAt: string;
   reasoning: string;
   tasks: string[];
-  toolCallsByTask: MysqlToolCallsByTask[];
-  resultsByTask: MysqlResultsByTask[];
+  toolCallsByTask: McpToolCallsByTask[];
+  resultsByTask: McpResultsByTask[];
   error: string | null;
 };
 
@@ -58,8 +58,10 @@ export function useMcp({isTesting = false}: {isTesting?: boolean} = {}) {
   const [error, setError] = useState<string | null>(null);
   const [reasoning, setReasoning] = useState('');
   const [tasks, setTasks] = useState<string[]>([]);
-  const [toolCallsByTask, setToolCallsByTask] = useState<MysqlToolCallsByTask[]>([]);
-  const [resultsByTask, setResultsByTask] = useState<MysqlResultsByTask[]>([]);
+  const [toolCallsByTask, setToolCallsByTask] = useState<McpToolCallsByTask[]>([]);
+  const [resultsByTask, setResultsByTask] = useState<McpResultsByTask[]>([]);
+
+  if (isTesting) {}
 
   // console.log("reasoning", reasoning);
   // console.log("tasks", tasks);
@@ -74,122 +76,6 @@ export function useMcp({isTesting = false}: {isTesting?: boolean} = {}) {
     setResultsByTask([]);
   }, []);
 
-
-  const mockRun = useCallback(async (): Promise<{
-    toolSystemMessage: Message | null;
-    runSnapshot: AgentRunSnapshot | null;
-  }> => {
-    setIsPlanning(true);
-    reset();
-
-    try {
-      // Simulate a short planner phase
-      await sleep(450);
-
-      const demoReasoning =
-        'The user is asking about database structure/data. Using MySQL MCP will help by inspecting schema and fetching relevant rows.';
-      const demoTasks = [
-        'List tables to find relevant entities',
-        'Describe the most relevant table for the user’s request',
-        'Query a small sample of rows needed to answer',
-      ];
-
-      setReasoning(demoReasoning);
-      setTasks(demoTasks);
-
-      // End planning, begin execution (what the sidebar uses as "running")
-      setIsPlanning(false);
-      setIsExecuting(true);
-
-      const localResultsByTask: MysqlResultsByTask[] = [];
-
-      // Task 1
-      const t1Calls: MysqlPlannedCall[] = [{ name: 'mysql_list_tables', arguments: {} }];
-      setToolCallsByTask((prev) => [...prev, { task: demoTasks[0], calls: t1Calls }]);
-      await sleep(650);
-      const t1Results: MysqlToolResult[] = [
-        {
-          name: 'mysql_list_tables',
-          arguments: {},
-          ok: true,
-          result: { content: [
-            { type: 'text', text: JSON.stringify({ tables: [{ tableName: 'users' }, { tableName: 'orders' }, { tableName: 'subscriptions' }] }, null, 2) },
-          ] },
-        },
-      ];
-      const t1Entry: MysqlResultsByTask = { task: demoTasks[0], calls: t1Calls, results: t1Results };
-      localResultsByTask.push(t1Entry);
-      setResultsByTask((prev) => [...prev, t1Entry]);
-
-      // Task 2
-      const t2Calls: MysqlPlannedCall[] = [{ name: 'mysql_describe_table', arguments: { table: 'subscriptions' } }];
-      setToolCallsByTask((prev) => [...prev, { task: demoTasks[1], calls: t2Calls }]);
-      await sleep(650);
-      const t2Results: MysqlToolResult[] = [
-        {
-          name: 'mysql_describe_table',
-          arguments: { table: 'subscriptions' },
-          ok: true,
-          result: { content: [
-            { type: 'text', text: JSON.stringify({
-              table: 'subscriptions',
-              columns: [
-                { columnName: 'id', columnType: 'bigint', isNullable: 'NO', columnKey: 'PRI' },
-                { columnName: 'endpoint', columnType: 'text', isNullable: 'NO' },
-                { columnName: 'created_at', columnType: 'datetime', isNullable: 'NO' },
-              ],
-            }, null, 2) },
-          ] },
-        },
-      ];
-      const t2Entry: MysqlResultsByTask = { task: demoTasks[1], calls: t2Calls, results: t2Results };
-      localResultsByTask.push(t2Entry);
-      setResultsByTask((prev) => [...prev, t2Entry]);
-
-      // Task 3 (include one error to test UI)
-      const t3Calls: MysqlPlannedCall[] = [
-        { name: 'mysql_query', arguments: { sql: 'SELECT * FROM subscriptions LIMIT 3' } },
-      ];
-      setToolCallsByTask((prev) => [...prev, { task: demoTasks[2], calls: t3Calls }]);
-      await sleep(650);
-      const t3Results: MysqlToolResult[] = [
-        {
-          name: 'mysql_query',
-          arguments: { sql: 'SELECT * FROM subscriptions LIMIT 3' },
-          ok: false,
-          error: 'Demo error: connection refused (testing mode)',
-        },
-      ];
-      const t3Entry: MysqlResultsByTask = { task: demoTasks[2], calls: t3Calls, results: t3Results };
-      localResultsByTask.push(t3Entry);
-      setResultsByTask((prev) => [...prev, t3Entry]);
-
-      const toolSystemMessage = buildMysqlToolSystemMessage({
-        tasks: demoTasks,
-        resultsByTask: localResultsByTask.map(({ task, results }) => ({ task, results })),
-      });
-
-      const runSnapshot: AgentRunSnapshot = {
-        version: 1,
-        createdAt: new Date().toISOString(),
-        reasoning: demoReasoning,
-        tasks: demoTasks,
-        toolCallsByTask: localResultsByTask.map((t) => ({ task: t.task, calls: t.calls })),
-        resultsByTask: localResultsByTask,
-        error: null,
-      };
-
-      return { toolSystemMessage, runSnapshot };
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setError(msg);
-      throw e;
-    } finally {
-      setIsPlanning(false);
-      setIsExecuting(false);
-    }
-  }, [reset])
-
   const run = useCallback(async (args: {
     apiMessages: ApiMessage[];
     agent: ChatAgent;
@@ -198,15 +84,11 @@ export function useMcp({isTesting = false}: {isTesting?: boolean} = {}) {
     toolSystemMessage: Message | null;
     runSnapshot: AgentRunSnapshot | null;
   }> => {
-    if (isTesting) {
-      return await mockRun();
-    }
-
     setIsPlanning(true);
     reset();
 
     try {
-      const plan = await planMysqlTasks(args);
+      const plan = await planMcpTasks(args);
       setReasoning(plan.reasoning);
       setTasks(plan.tasks);
 
@@ -217,14 +99,14 @@ export function useMcp({isTesting = false}: {isTesting?: boolean} = {}) {
 
       // IMPORTANT: fetch the exact MCP tool schemas once and inject them into the tool-call generator context,
       // so the model doesn't hallucinate argument shapes.
-      const toolSchemas = await fetchMysqlMcpToolSchemas();
+      const toolSchemas = await fetchMcpToolSchemas();
 
       // From this point on, we consider "MySQL MCP running" (tool execution), excluding planner time.
       setIsExecuting(true);
-      const localResultsByTask: MysqlResultsByTask[] = [];
+      const localResultsByTask: McpResultsByTask[] = [];
 
       for (const task of plan.tasks) {
-        const plannedCalls = await planMysqlToolCallsForTask({
+        const plannedCalls = await planMcpToolCallsForTask({
           task,
           apiMessages: args.apiMessages,
           agent: args.agent,
@@ -235,13 +117,13 @@ export function useMcp({isTesting = false}: {isTesting?: boolean} = {}) {
 
         setToolCallsByTask((prev) => [...prev, { task, calls: plannedCalls }]);
 
-        const results = await runMysqlToolCallsDirect({ calls: plannedCalls });
-        const entry: MysqlResultsByTask = { task, calls: plannedCalls, results };
+        const results = await runToolCallsDirect({ calls: plannedCalls });
+        const entry: McpResultsByTask = { task, calls: plannedCalls, results };
         localResultsByTask.push(entry);
         setResultsByTask((prev) => [...prev, entry]);
       }
 
-      const toolSystemMessage = buildMysqlToolSystemMessage({
+      const toolSystemMessage = buildMcpToolSystemMessage({
         tasks: plan.tasks,
         resultsByTask: localResultsByTask.map(({ task: t, results }) => ({ task: t, results })),
       });
@@ -266,7 +148,7 @@ export function useMcp({isTesting = false}: {isTesting?: boolean} = {}) {
       setIsPlanning(false);
       setIsExecuting(false);
     }
-  }, [isTesting, reset, mockRun]);
+  }, [reset]);
 
   return {
     run, 
@@ -281,19 +163,15 @@ export function useMcp({isTesting = false}: {isTesting?: boolean} = {}) {
   };
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
 /**
  * Step 1: generate a plain-text task list describing what to do (no JSON tool calls here).
  * The tool calls are generated per task, taking prior results as input.
  */
-export async function planMysqlTasks(args: {
+export async function planMcpTasks(args: {
   apiMessages: ApiMessage[];
   agent: ChatAgent;
   apiKey: string;
-}): Promise<MysqlPlan> {
+}): Promise<McpPlan> {
   const { apiMessages, agent, apiKey } = args;
 
   // Keep the planner context bounded to reduce cost/latency.
@@ -327,20 +205,20 @@ export async function planMysqlTasks(args: {
     provider: agent.provider,
   });
 
-  return parseMysqlTaskPlan(resp.content);
+  return parseMcpTaskPlan(resp.content);
 }
 
 /**
  * Step 2..N: for each task, generate tool calls (JSON) using prior task results as context.
  */
-export async function planMysqlToolCallsForTask(args: {
+export async function planMcpToolCallsForTask(args: {
   task: string;
   apiMessages: ApiMessage[];
   agent: ChatAgent;
   apiKey: string;
-  priorResults: Array<{ task: string; results: MysqlToolResult[] }>;
-  toolSchemas: MysqlMcpToolSchema[] | null;
-}): Promise<MysqlPlannedCall[]> {
+  priorResults: Array<{ task: string; results: McpToolResult[] }>;
+  toolSchemas: McpMcpToolSchema[] | null;
+}): Promise<McpPlannedCall[]> {
   const { task, apiMessages, agent, apiKey, priorResults, toolSchemas } = args;
 
   const context = apiMessages.slice(-3);
@@ -379,21 +257,21 @@ export async function planMysqlToolCallsForTask(args: {
   });
 
   const parsed = safeJsonParse(resp.content);
-  return normalizeMysqlCalls(parsed);
+  return normalizeMcpCalls(parsed);
 }
 
-export async function runMysqlToolCallsDirect(args: {
-  calls: MysqlPlannedCall[];
-}): Promise<MysqlToolResult[]> {
+export async function runToolCallsDirect(args: {
+  calls: McpPlannedCall[];
+}): Promise<McpToolResult[]> {
   const { calls } = args;
   if (!calls.length) return [];
 
   const TOOL_CALL_TIMEOUT_MS = 10_000;
-  const results: MysqlToolResult[] = [];
+  const results: McpToolResult[] = [];
   for (const call of calls) {
     try {
       const result = await withTimeout(
-        mysqlHttpCallTool(call.name, call.arguments),
+        mcpHttpCallTool(call.name, call.arguments),
         TOOL_CALL_TIMEOUT_MS,
         `Tool call timed out after ${TOOL_CALL_TIMEOUT_MS / 1000}s: ${call.name}`
       );
@@ -421,9 +299,9 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, timeoutMessage: 
   });
 }
 
-export function buildMysqlToolSystemMessage(args: {
+export function buildMcpToolSystemMessage(args: {
   tasks: string[];
-  resultsByTask: Array<{ task: string; results: MysqlToolResult[] }>;
+  resultsByTask: Array<{ task: string; results: McpToolResult[] }>;
 }): Message | null {
   const { tasks, resultsByTask } = args;
 
@@ -431,33 +309,34 @@ export function buildMysqlToolSystemMessage(args: {
     role: 'system',
     id: `${Date.now()}-tool`,
     createdAt: new Date().toISOString(),
-    content: [
+    content: 'MCP task execution.',
+    rawContent: [
       '[MCP]',
-      'MySQL MCP task execution results (read-only). Use these results as ground truth and cite them when answering:',
+      'MCP task execution results. Use these results as ground truth and cite them when answering:',
       JSON.stringify({ tasks, resultsByTask }, null, 2),
     ].join('\n'),
   };
 }
 
-type MysqlHttpToolSchema = {
+type McpHttpToolSchema = {
   name: string;
   description?: string;
   inputSchema?: unknown;
 };
 
-function getMysqlHttpBaseUrl(): string {
+function getMcpHttpBaseUrl(): string {
   // Client-side: call same-origin Next route.
   return '/api/mcp/sql';
 }
 
-async function mysqlHttpListTools(): Promise<MysqlHttpToolSchema[] | null> {
+async function mcplHttpListTools(): Promise<McpHttpToolSchema[] | null> {
   try {
-    const res = await fetch(`${getMysqlHttpBaseUrl()}?tool=list`, { method: 'GET' });
+    const res = await fetch(`${getMcpHttpBaseUrl()}?tool=list`, { method: 'GET' });
     if (!res.ok) return null;
     const json = (await res.json()) as { tools?: unknown };
     if (!Array.isArray(json.tools)) return null;
 
-    const normalized: MysqlHttpToolSchema[] = [];
+    const normalized: McpHttpToolSchema[] = [];
     for (const t of json.tools) {
       if (!t || typeof t !== 'object') continue;
       const tool = t as { name?: unknown; description?: unknown; inputSchema?: unknown };
@@ -469,25 +348,25 @@ async function mysqlHttpListTools(): Promise<MysqlHttpToolSchema[] | null> {
       });
     }
 
-    const allow = new Set<MysqlToolName>(['mysql_query', 'mysql_list_tables', 'mysql_describe_table']);
-    return normalized.filter((t) => allow.has(t.name as MysqlToolName));
+    const allow = new Set<McpToolName>(['mysql_query', 'mysql_list_tables', 'mysql_describe_table']);
+    return normalized.filter((t) => allow.has(t.name as McpToolName));
   } catch {
     return null;
   }
 }
 
-async function mysqlHttpCallTool(
-  name: MysqlToolName,
+async function mcpHttpCallTool(
+  name: McpToolName,
   args: Record<string, unknown>
-): Promise<{ content: MysqlToolResultContent[] }> {
-  const res = await fetch(getMysqlHttpBaseUrl(), {
+): Promise<{ content: McpToolResultContent[] }> {
+  const res = await fetch(getMcpHttpBaseUrl(), {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ name, arguments: args }),
   });
 
   const data = (await res.json().catch(() => null)) as
-    | { content?: MysqlToolResultContent[]; isError?: boolean }
+    | { content?: McpToolResultContent[]; isError?: boolean }
     | null;
 
   if (!res.ok || !data || !Array.isArray(data.content) || data.isError) {
@@ -515,7 +394,7 @@ function safeJsonParse(s: string): unknown {
   }
 }
 
-function parseMysqlTaskPlan(text: string): MysqlPlan {
+function parseMcpTaskPlan(text: string): McpPlan {
   const lines = text
     .split('\n')
     .map((l) => l.trim())
@@ -571,11 +450,11 @@ function parseMysqlTaskPlan(text: string): MysqlPlan {
   return { needed: true, tasks: deduped, reasoning: reasoning || 'Needed.' };
 }
 
-function normalizeMysqlCalls(input: unknown): MysqlPlannedCall[] {
+function normalizeMcpCalls(input: unknown): McpPlannedCall[] {
   if (!input || typeof input !== 'object') return [];
   const obj = input as { calls?: unknown };
   const rawCalls = Array.isArray(obj.calls) ? obj.calls : [];
-  const calls: MysqlPlannedCall[] = [];
+  const calls: McpPlannedCall[] = [];
 
   for (const c of rawCalls.slice(0, 3)) {
     if (!c || typeof c !== 'object') continue;
@@ -594,21 +473,21 @@ function normalizeMysqlCalls(input: unknown): MysqlPlannedCall[] {
   return calls;
 }
 
-type MysqlMcpToolSchema = {
+type McpMcpToolSchema = {
   name: string;
   description?: string;
   inputSchema?: unknown;
 };
 
-async function fetchMysqlMcpToolSchemas(): Promise<MysqlMcpToolSchema[] | null> {
+async function fetchMcpToolSchemas(): Promise<McpMcpToolSchema[] | null> {
   // Backwards-compatible name, now sourced from the HTTP tool endpoint.
-  return await mysqlHttpListTools();
+  return await mcplHttpListTools();
 }
 
 
 const PLANNER_SYSTEM_PROMPT = `
-You are a task planner for using MySQL MCP tools.
-Your job: decide whether MySQL MCP is needed, and if yes, produce a short plain-text task list.
+You are a task planner for using MCP tools.
+Your job: decide whether MCP tools are needed, and if yes, produce a short plain-text task list.
 Output MUST be plain text (no JSON, no markdown fences) in exactly this format:
 NEEDED: YES|NO
 REASONING:
@@ -624,8 +503,8 @@ Rules:
 `;
 
 const TOOL_GENERATOR_SYSTEM_PROMPT = `
-You are a tool generator for using MySQL MCP tools.
-Your job: generate MySQL MCP tool calls for ONE task.
+You are a tool generator for using MCP tools.
+Your job: generate MCP tool calls for ONE task.
 Return ONLY strict JSON of the form:
 { "calls": Array<{ "name": "tool_name", "arguments": object }> }
 Rules:

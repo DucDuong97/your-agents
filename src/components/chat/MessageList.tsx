@@ -77,7 +77,11 @@ const CodeBlock = ({ language, code }: { language: string; code: string }) => {
 };
 
 export default function MessageList({ messages, isGenerating, streamingContent, onAssistantMessageClick }: MessageListProps) {
-  const displayMessages = messages.filter((message) => message.role !== 'system');
+  const displayMessages = messages.filter((message) => {
+    if (message.role !== 'system') return true;
+    // Show only knowledge system messages
+    return typeof message.content === 'string' && message.content.includes('[KNOWLEDGE]');
+  });
 
   return (
     <div className="space-y-4 sm:space-y-6 px-2 sm:px-4 py-2">

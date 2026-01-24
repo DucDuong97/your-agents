@@ -104,11 +104,32 @@ function enqueueLlmCall(record: LlmCallRecord) {
   }
 }
 
-export function toApiMessage(message: Message): ApiMessage {
-  return {
-    role: message.role,
-    content: message.content,
+export function toApiMessage(msg: Message): ApiMessage | null {
+  // Skip system messages as we already added our enhanced system prompt
+  if (msg.role === 'system') {
+    if (!msg.rawContent) return null;
+    if (msg.rawContent.includes('[KNOWLEDGE]') || msg.rawContent.includes('[MCP]')) {
+      return {
+        role: msg.role,
+        content: msg.rawContent,
+      };
+    }
   };
+
+  // Handle messages with images
+  if (msg.rawContent && msg.role === 'user') {
+    // If the message has structured content (for images), use it
+    return {
+      role: msg.role,
+      content: JSON.parse(msg.rawContent),
+    };
+  } else {
+    // Otherwise use the regular content
+    return {
+      role: msg.role,
+      content: msg.content,
+    };
+  }
 }
 
 // Client-side function to generate chat completion

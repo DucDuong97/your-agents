@@ -257,12 +257,48 @@ function isReadOnlySql(sql: string): boolean {
   return false;
 }
 
-function maybeApplyLimit(sql: string, maxRows: number): string {
+function ensureLimit(sql: string, maxRows: number): string {
   const s = stripLeadingComments(sql).trim();
   const upper = s.toUpperCase();
   if (!/^(SELECT|WITH)\b/u.test(upper)) return sql;
-  if (/\bLIMIT\b/u.test(upper)) return sql;
+  
+  // Check if LIMIT already exists
+  const limitMatch = upper.match(/\bLIMIT\s+(\d+)(?:\s*,\s*(\d+))?(?:\s+OFFSET\s+(\d+))?/u);
+  if (limitMatch) {
+    // LIMIT exists - parse it
+    // MySQL LIMIT syntax: LIMIT count or LIMIT offset, count or LIMIT count OFFSET offset
+    let existingLimit: number;
+    let offset: number | undefined;
+    
+    if (limitMatch[2]) {
+      // LIMIT offset, count format
+      offset = Number.parseInt(limitMatch[1], 10);
+      existingLimit = Number.parseInt(limitMatch[2], 10);
+    } else if (limitMatch[3]) {
+      // LIMIT count OFFSET offset format
+      existingLimit = Number.parseInt(limitMatch[1], 10);
+      offset = Number.parseInt(limitMatch[3], 10);
+    } else {
+      // LIMIT count format
+      existingLimit = Number.parseInt(limitMatch[1], 10);
+    }
+    
+    // If existing limit is within bounds, keep it; otherwise enforce maxRows
+    if (existingLimit <= maxRows) {
+      return sql; // Keep existing LIMIT if it's within bounds
+    }
+    
+    // Replace existing LIMIT with maxRows (preserve offset if present)
+    const hasSemi = /;+\s*$/u.test(sql);
+    const base = sql.trim().replace(/;+\s*$/u, '');
+    const newLimit = offset !== undefined 
+      ? `LIMIT ${offset}, ${maxRows}`
+      : `LIMIT ${maxRows}`;
+    const limited = base.replace(/\bLIMIT\s+\d+(?:\s*,\s*\d+)?(?:\s+OFFSET\s+\d+)?/iu, newLimit);
+    return hasSemi ? `${limited};` : limited;
+  }
 
+  // No LIMIT exists - add it
   const hasSemi = /;+\s*$/u.test(sql);
   const base = sql.trim().replace(/;+\s*$/u, '');
   const limited = `${base}\nLIMIT ${maxRows}`;
@@ -308,7 +344,7 @@ async function handleListTables(): Promise<NextResponse> {
        ORDER BY TABLE_NAME`,
       []
     );
-    return ok(JSON.stringify({ tables: rows }, null, 2));
+    return ok((rows as { tableName: string }[]).map((r) => r.tableName).join(', '));
   } catch (e) {
     return err(`MySQL error: ${e instanceof Error ? e.message : String(e)}`, 500);
   }
@@ -352,7 +388,7 @@ async function handleQuery(sql: string, params: unknown[]): Promise<NextResponse
   }
 
   const maxRows = intFromEnv('MCP_MAX_ROWS', 1000);
-  const effectiveSql = maybeApplyLimit(sql, maxRows);
+  const effectiveSql = ensureLimit(sql, maxRows);
 
   try {
     const [rows] = await getPool().execute(effectiveSql, Array.isArray(params) ? params : []);
@@ -373,7 +409,7 @@ export async function GET(request: NextRequest) {
         {
           name: 'mysql_query',
           description:
-            'Execute a read-only SQL query against MySQL. Allowed: SELECT/SHOW/DESCRIBE/EXPLAIN (and WITH ... SELECT). Writes are blocked.',
+            'Execute a read-only SQL query against MySQL. Allowed: SELECT/SHOW/DESCRIBE/EXPLAIN (and WITH ... SELECT). Writes are blocked. Remember to use LIMIT (max 20 rows) to prevent overwhelming the database.',
           inputSchema: {
             type: 'object',
             additionalProperties: false,

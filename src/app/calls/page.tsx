@@ -2,6 +2,8 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import type { ApiMessage, LlmCallRecord } from '@/lib/openrouter';
+import { generateChatCompletion } from '@/lib/openrouter';
+import { getGlobalConfig } from '@/lib/storage';
 
 const STORAGE_KEY = 'llm_calls';
 
@@ -32,14 +34,6 @@ function formatDate(iso: string): string {
   return d.toLocaleString();
 }
 
-function prettyJson(value: unknown): string {
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value);
-  }
-}
-
 function LlmCallModal({
   call,
   onClose,
@@ -47,9 +41,85 @@ function LlmCallModal({
   call: LlmCallRecord;
   onClose: () => void;
 }) {
+  const requestBody = call.requestBody as { messages?: ApiMessage[]; model?: string; max_tokens?: number; max_completion_tokens?: number };
+  const messages = requestBody?.messages || [];
+  const systemMessageIndex = messages.findIndex((m) => m.role === 'system');
+  const systemMessage = systemMessageIndex >= 0 ? messages[systemMessageIndex] : null;
+  const systemContent = systemMessage ? (typeof systemMessage.content === 'string' ? systemMessage.content : '') : '';
+
+  const [isEditingSystemPrompt, setIsEditingSystemPrompt] = useState(false);
+  const [editedSystemPrompt, setEditedSystemPrompt] = useState(systemContent);
+  const [isResending, setIsResending] = useState(false);
+  const [resendError, setResendError] = useState<string | null>(null);
+  const [newResponse, setNewResponse] = useState<string | null>(null);
+
+  useEffect(() => {
+    setEditedSystemPrompt(systemContent);
+    setIsEditingSystemPrompt(false);
+    setResendError(null);
+    setNewResponse(null);
+  }, [call.id, systemContent]);
+
+  const handleResend = async () => {
+    if (!systemMessage) {
+      setResendError('No system message found to edit');
+      return;
+    }
+
+    const config = getGlobalConfig();
+    const apiKey = call.provider === 'openrouter' ? config.openrouterApiKey : config.openaiApiKey;
+
+    if (!apiKey) {
+      setResendError(`No API key found for ${call.provider}. Please configure it in settings.`);
+      return;
+    }
+
+    setIsResending(true);
+    setResendError(null);
+
+    try {
+      // Create updated messages array with edited system prompt
+      const updatedMessages: ApiMessage[] = messages.map((msg, idx) => {
+        if (idx === systemMessageIndex) {
+          return {
+            ...msg,
+            content: editedSystemPrompt,
+          };
+        }
+        return msg;
+      });
+
+      const maxTokens = requestBody?.max_tokens || requestBody?.max_completion_tokens || 5000;
+
+      const response = await generateChatCompletion({
+        title: call.title,
+        messages: updatedMessages,
+        model: requestBody?.model || call.model,
+        apiKey,
+        provider: call.provider,
+        isStreaming: call.isStreaming,
+        maxTokens,
+      });
+
+      setNewResponse(response.content);
+      setIsEditingSystemPrompt(false);
+      
+    } catch (error) {
+      setResendError(error instanceof Error ? error.message : 'Failed to resend API call');
+    } finally {
+      setIsResending(false);
+    }
+  };
+
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-5xl w-full max-h-[90vh] overflow-y-auto">
+    <div 
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
+      onClick={onClose}
+    >
+      <div 
+        className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-5xl w-full max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="p-6">
           <div className="flex justify-between items-start gap-4 mb-4">
             <div>
@@ -101,27 +171,98 @@ function LlmCallModal({
             </div>
           )}
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div>
-              <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-2">
-                Request
-              </h3>
-              {call?.requestBody?.messages.map((m: ApiMessage, i: number) => (
-                <div key={i} className="mb-4">
-                  <div className="font-semibold text-gray-800 dark:text-gray-200 mb-1">{m.role}</div>
-                  <pre className="text-xs p-3 rounded-md bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 overflow-auto whitespace-pre-wrap">
-                    {m.content as string}
-                  </pre>
-                </div>
-              ))}
+          {resendError && (
+            <div className="mb-4 p-3 rounded-md bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-200 text-sm whitespace-pre-wrap">
+              {resendError}
             </div>
+          )}
+
+          <div className="flex flex-col gap-6">
+            {systemMessage && (
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+                    System Prompt
+                  </h2>
+                  <div className="flex gap-2">
+                    {isEditingSystemPrompt ? (
+                      <>
+                        <button
+                          onClick={() => {
+                            setEditedSystemPrompt(systemContent);
+                            setIsEditingSystemPrompt(false);
+                            setNewResponse(null);
+                          }}
+                          className="px-3 py-1 text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600 rounded"
+                          disabled={isResending}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={handleResend}
+                          disabled={isResending}
+                          className="px-3 py-1 text-xs font-medium text-white bg-blue-500 hover:bg-blue-600 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {isResending ? 'Resending...' : 'Resend'}
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        onClick={() => setIsEditingSystemPrompt(true)}
+                        className="px-3 py-1 text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600 rounded"
+                      >
+                        Edit & Resend
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {isEditingSystemPrompt ? (
+                  <>
+                    <textarea
+                      value={editedSystemPrompt}
+                      onChange={(e) => setEditedSystemPrompt(e.target.value)}
+                      rows={6}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-y font-mono"
+                      placeholder="Enter system prompt..."
+                    />
+                    {newResponse && (
+                      <div className="mt-4">
+                        <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-2">
+                          New Response
+                        </h3>
+                        <pre className="text-xs p-3 rounded-md bg-green-50 dark:bg-green-900/20 text-gray-900 dark:text-gray-100 overflow-auto max-h-[50vh] whitespace-pre-wrap border border-green-200 dark:border-green-800">
+                          {newResponse}
+                        </pre>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <pre className="text-xs p-3 rounded-md bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 overflow-auto whitespace-pre-wrap">
+                    {systemContent || '(no system prompt)'}
+                  </pre>
+                )}
+              </div>
+            )}
             <div>
-              <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-2">
+              <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200 mb-2">
                 Response
-              </h3>
+              </h2>
               <pre className="text-xs p-3 rounded-md bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 overflow-auto max-h-[50vh] whitespace-pre-wrap">
                 {call.response ? call.response.content : '(no response)'}
               </pre>
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200 mb-2">
+                Request
+              </h2>
+              {messages.map((m: ApiMessage, i: number) => (
+                <div key={i} className="mb-4 flex gap-4">
+                  <div className="font-semibold text-sm text-gray-800 dark:text-gray-200 mb-1 w-20">{m.role}</div>
+                  <pre className="text-xs p-3 rounded-md bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 overflow-auto whitespace-pre-wrap">
+                    {typeof m.content === 'string' ? m.content : JSON.stringify(m.content, null, 2)}
+                  </pre>
+                </div>
+              ))}
             </div>
           </div>
 
@@ -142,11 +283,28 @@ function LlmCallModal({
 export default function CallsPage() {
   const [calls, setCalls] = useState<LlmCallRecord[]>([]);
   const [selected, setSelected] = useState<LlmCallRecord | null>(null);
+  const [titleFilter, setTitleFilter] = useState<string>('');
+
+  const uniqueTitles = useMemo(() => {
+    const titles = new Set<string>();
+    calls.forEach((call) => {
+      const title = call.title || '(untitled)';
+      titles.add(title);
+    });
+    return Array.from(titles).sort();
+  }, [calls]);
 
   const sortedCalls = useMemo(() => {
     // Stored as a queue (oldest -> newest). Show newest first.
-    return [...calls].reverse();
-  }, [calls]);
+    let filtered = [...calls].reverse();
+    if (titleFilter) {
+      filtered = filtered.filter((call) => {
+        const title = call.title || '(untitled)';
+        return title === titleFilter;
+      });
+    }
+    return filtered;
+  }, [calls, titleFilter]);
 
   const refresh = () => setCalls(readCalls());
 
@@ -166,7 +324,21 @@ export default function CallsPage() {
               Stored locally in <span className="font-mono">localStorage</span> key <span className="font-mono">&quot;{STORAGE_KEY}&quot;</span> (max 20)
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
+            {uniqueTitles.length > 0 && (
+              <select
+                value={titleFilter}
+                onChange={(e) => setTitleFilter(e.target.value)}
+                className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="">All Titles</option>
+                {uniqueTitles.map((title) => (
+                  <option key={title} value={title}>
+                    {title}
+                  </option>
+                ))}
+              </select>
+            )}
             <button
               onClick={refresh}
               className="px-3 py-2 text-sm bg-blue-500 hover:bg-blue-600 text-white rounded"

@@ -32,6 +32,14 @@ export default function Header({
     <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-3 sm:p-4 sticky top-0 z-10">
         <div className="max-w-3xl mx-auto flex justify-between items-center">
           <div className="flex items-center min-w-0 flex-1">
+              <button
+                onClick={handleNavigateToHome}
+                className="p-1 sm:p-2 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white rounded-lg touch-manipulation"
+                aria-label="Home"
+                title="Home"
+              >
+                <Home size={18} />
+              </button>
             <div className="flex-shrink-0 flex space-x-1 mr-2">
               <button
                 onClick={handleNavigateToSessions}
@@ -40,14 +48,6 @@ export default function Header({
                 title="Back to sessions"
               >
                 <ArrowLeft size={18} />
-              </button>
-              <button
-                onClick={handleNavigateToHome}
-                className="p-1 sm:p-2 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white rounded-lg touch-manipulation"
-                aria-label="Home"
-                title="Home"
-              >
-                <Home size={18} />
               </button>
             </div>
             <div className="min-w-0 flex-1 overflow-hidden">

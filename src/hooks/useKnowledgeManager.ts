@@ -11,6 +11,7 @@ import { useApiKey } from './useApiKey';
 export function useKnowledgeManager(agent: ChatAgent | null | undefined) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastGeneratedEntry, setLastGeneratedEntry] = useState<{ key: string; value: string } | null>(null);
 
   const { getApiKeyForAgentOrRedirect } = useApiKey();
 
@@ -32,7 +33,7 @@ export function useKnowledgeManager(agent: ChatAgent | null | undefined) {
     try {
       const lastUserMessage = getMessageText(getLastMessageByRole(messages, 'user'));
       const lastAssistantResponse = getMessageText(getLastMessageByRole(messages, 'assistant'));
-      const toolCalls = extractToolCallsForLastAssistant(messages);
+      const lastToolCalls = extractToolCallsForLastAssistant(messages);
 
       const response = await generateChatCompletion({
         title: 'Knowledge Generation',
@@ -42,24 +43,35 @@ export function useKnowledgeManager(agent: ChatAgent | null | undefined) {
         messages: [
           {
             role: 'system',
-            content: KNOWLEDGE_GENERATION_PROMPT.replace('{{knowledge_generation_prompt}}', kgPrompt),
+            content: KNOWLEDGE_GENERATION_PROMPT
+              .replace('{{knowledge_generation_prompt}}', kgPrompt)
+              .replace('{{current_knowledge}}', JSON.stringify(agent.knowledge ?? {})),
           },
           {
             role: 'user',
             content: KNOWLEDGE_GENERATION_USER_MESSAGE
               .replace('{{user_message}}', lastUserMessage)
               .replace('{{assistant_response}}', lastAssistantResponse)
-              .replace('{{tool_calls}}', toolCalls),
+              .replace('{{tool_calls}}', lastToolCalls),
           },
         ],
       });
 
       const raw = stripFences(response.content);
-      if (raw === 'NONE') return null;
+      if (raw === 'NONE') {
+        setLastGeneratedEntry(null);
+        return null;
+      }
 
-      const updated = appendKnowledge(agent.knowledge, raw);
-      await agentDB.update(agent.id, { knowledge: updated });
-      return updated;
+      const parsed = parseKeyValueEntry(raw) || parseKeyValueEntry2(raw);
+      if (parsed) {
+        setLastGeneratedEntry(parsed);
+      } else {
+        setLastGeneratedEntry(null);
+      }
+
+      // Do not persist knowledge here; wait for explicit user confirmation.
+      return null;
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Failed to generate knowledge.';
       console.error('[useKnowledgeGenerator] Error:', e);
@@ -69,6 +81,37 @@ export function useKnowledgeManager(agent: ChatAgent | null | undefined) {
       setIsGenerating(false);
     }
   }, [agent, getApiKeyForAgentOrRedirect]);
+
+  const confirmLastGeneratedKnowledge = useCallback(
+    async (key: string, value: string) => {
+      if (!agent || !lastGeneratedEntry) return null;
+
+      const trimmedKey = key.trim();
+      const trimmedValue = value.trim();
+      if (!trimmedKey || !trimmedValue) {
+        return null;
+      }
+
+      const latestAgent = await agentDB.get(agent.id);
+      const baseAgent = latestAgent ?? agent;
+      const existing = baseAgent.knowledge ?? {};
+
+      const updatedKnowledge: Record<string, string[]> = {};
+      for (const [k, v] of Object.entries(existing)) {
+        updatedKnowledge[k] = Array.isArray(v) ? [...v] : [];
+      }
+
+      const prevList = Array.isArray(updatedKnowledge[trimmedKey])
+        ? updatedKnowledge[trimmedKey]
+        : [];
+      updatedKnowledge[trimmedKey] = [...prevList, trimmedValue].slice(-10);
+
+      const saved = await agentDB.update(baseAgent.id, { knowledge: updatedKnowledge });
+      setLastGeneratedEntry(null);
+      return saved;
+    },
+    [agent, lastGeneratedEntry]
+  );
 
 
   const buildKnowledgeSystemMessage = useCallback(async (apiMessages: ApiMessage[]) => {
@@ -126,7 +169,8 @@ export function useKnowledgeManager(agent: ChatAgent | null | undefined) {
       role: 'system',
       id: `${Date.now()}-knowledge`,
       createdAt: new Date().toISOString(),
-      content: [
+      content: 'Used knowledge: ' + knowledgeLines.join('\n'),
+      rawContent: [
         '[KNOWLEDGE]',
         'Relevant stored knowledge (use if helpful):',
         ...knowledgeLines,
@@ -138,7 +182,14 @@ export function useKnowledgeManager(agent: ChatAgent | null | undefined) {
   [getApiKeyForAgentOrRedirect, agent]
   );
 
-  return { generateKnowledge, buildKnowledgeSystemMessage, isGenerating, error };
+  return {
+    generateKnowledge,
+    buildKnowledgeSystemMessage,
+    isGenerating,
+    error,
+    lastGeneratedEntry,
+    confirmLastGeneratedKnowledge,
+  };
 }
 
 async function selectRelevantKnowledgeKeys(args: {
@@ -220,18 +271,7 @@ function parseKeyValueEntry2(raw: string): { key: string; value: string } | null
   return { key, value };
 }
 
-function appendKnowledge(
-  existing: Record<string, string[]> | undefined,
-  entryRaw: string
-): Record<string, string[]> {
-  const parsed = parseKeyValueEntry(entryRaw) || parseKeyValueEntry2(entryRaw);
-  if (!parsed) return existing ?? {};
-
-  const next: Record<string, string[]> = { ...(existing ?? {}) };
-  const prevList = Array.isArray(next[parsed.key]) ? next[parsed.key] : [];
-  next[parsed.key] = [...prevList, parsed.value].slice(-50); // cap per-key history
-  return next;
-}
+// Note: appending/saving knowledge is now handled at the call site after user confirmation.
 
 function isKnowledgeSystemApiMessage(m: ApiMessage): boolean {
   if (m.role !== 'system') return false;
@@ -301,11 +341,13 @@ You will be given the last user message, the assistant's response, and the tool 
 A knowledge entry should be a key-value pair. The key should be a short, descriptive name for the knowledge. The value should be a concise summary of the knowledge related to the key's name.
 
 Task:
-- Produce ONE new knowledge entry to append to the existing knowledge.
+- Produce at most ONE new knowledge entry to append to the existing knowledge.
+- If there is nothing worth saving, output exactly: NONE.
+
+Notes:
 - Prefer durable facts, and stable context.
 - Avoid ephemeral details unless clearly important long-term.
 - Output plain text only, no markdown headings, no code fences.
-- If there is nothing worth saving, output exactly: NONE
 
 Output format:
 \`\`\`
@@ -315,6 +357,9 @@ value: This is a concise summary of the knowledge related to the key's name.
 
 The knowledge output should follow the following prompt:
 {{knowledge_generation_prompt}}
+
+And, please do not produce new knowledge entries that might be duplicated with the existing knowledge. Here is the current knowledge:
+{{current_knowledge}}
 `;
 
 const KNOWLEDGE_GENERATION_USER_MESSAGE = `

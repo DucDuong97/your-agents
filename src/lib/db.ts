@@ -1,4 +1,4 @@
-import { MysqlToolCallsByTask, MysqlResultsByTask } from '@/hooks/useMcp';
+import { McpToolCallsByTask, McpResultsByTask } from '@/hooks/useMcp';
 import { nanoid } from 'nanoid';
 
 // Define types for our data
@@ -9,7 +9,7 @@ export interface Message {
   createdAt: string;
   rawContent?: string; // For storing structured content (like image data) in JSON format
   /**
-   * Optional persisted agent/tool execution snapshot (e.g. MySQL MCP run) for this assistant message.
+   * Optional persisted agent/tool execution snapshot (e.g. MCP run) for this assistant message.
    * Stored separately from `rawContent` so image payloads and agent runs don't collide.
    */
   agentRunSnapshot?: {
@@ -17,8 +17,8 @@ export interface Message {
     createdAt: string;
     reasoning: string;
     tasks: string[];
-    toolCallsByTask:  MysqlToolCallsByTask[];
-    resultsByTask: MysqlResultsByTask[];
+    toolCallsByTask:  McpToolCallsByTask[];
+    resultsByTask: McpResultsByTask[];
     error: string | null;
   };
   price?: {
@@ -58,7 +58,7 @@ export interface ChatAgent {
   };
   knowledgeGenerationPrompt?: string;
   knowledge?: Record<string, string[]>;
-  /** If enabled, this agent can use the local MySQL MCP server (see `mcp/sql.js`). */
+  /** If enabled, this agent can use the local MCP server (see `mcp/sql.js`). */
   useMysqlMcp?: boolean;
   createdAt: string;
   updatedAt: string;

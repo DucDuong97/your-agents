@@ -25,10 +25,14 @@ export default function MessageInput({
   
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter') {
-      if (!e.metaKey) {
-        if (!isSubmitting) {
-          onSubmit(e);
-        }
+      // Allow line break with Shift + Enter or Cmd + Enter
+      if (e.shiftKey || e.metaKey) {
+        return; // Allow default behavior (line break)
+      }
+      // Submit on Enter alone
+      if (!isSubmitting) {
+        e.preventDefault();
+        onSubmit(e);
       }
     }
   };
