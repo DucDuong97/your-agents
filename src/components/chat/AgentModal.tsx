@@ -92,11 +92,15 @@ export default function AgentModal({ initialAgent, onSubmit, onClose }: AgentMod
       // Generate example prompts based on agent configuration
       let examplePrompts: string[];
       try {
-        examplePrompts = await generateExamplePrompts(
-          data.name,
-          data.systemPrompt,
-          data.provider
-        );
+        if (initialAgent?.systemPrompt.length == data.systemPrompt.length) {
+          examplePrompts = initialAgent.examplePrompts;
+        } else {
+          examplePrompts = await generateExamplePrompts(
+            data.name,
+            data.systemPrompt,
+            data.provider
+          );
+        }
       } catch (error) {
         console.error('Error generating example prompts:', error);
         // Fallback to sync version if API call fails

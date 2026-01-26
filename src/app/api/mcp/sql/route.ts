@@ -10,7 +10,7 @@ import mysql from 'mysql2/promise';
  *
  * Env:
  * - MYSQL_HOST, MYSQL_PORT, MYSQL_USER, MYSQL_PASSWORD, MYSQL_DATABASE
- * - MCP_MAX_ROWS (default 1000) applied to SELECT/WITH ... SELECT without LIMIT
+ * - MCP_MAX_ROWS (default 20) applied to SELECT/WITH ... SELECT without LIMIT
  */
 
 function requiredEnv(name: string, env?: string): string {
@@ -431,7 +431,7 @@ async function handleQuery(sql: string, params: unknown[], env?: string): Promis
     );
   }
 
-  const maxRows = intFromEnv('MCP_MAX_ROWS', 1000, env);
+  const maxRows = intFromEnv('MCP_MAX_ROWS', 20, env);
   const effectiveSql = ensureLimit(sql, maxRows);
 
   try {

@@ -4,7 +4,6 @@ import { useCallback, useState } from 'react';
 import type { ApiMessage } from '@/lib/openrouter';
 import { generateChatCompletion } from '@/lib/openrouter';
 import type { ChatAgent, Message } from '@/lib/db';
-import { getLastUserMessageText } from '@/lib/aiMessageUtils';
 
 export type McpToolName = 'mysql_query' | 'mysql_list_tables' | 'mysql_describe_table';
 
@@ -88,8 +87,17 @@ export function useMcp({isTesting = false}: {isTesting?: boolean} = {}) {
     setIsPlanning(true);
     reset();
 
+    // IMPORTANT: fetch the exact MCP tool schemas once and inject them into the tool-call generator context,
+    // so the model doesn't hallucinate argument shapes.
+    const toolSchemas = await fetchMcpToolSchemas();
+
     const localResultsByTask: McpResultsByTask[] = [];
-    const plan = await planMcpTasks(args);
+    const plan = await planMcpTasks({
+      apiMessages: args.apiMessages,
+      agent: args.agent,
+      apiKey: args.apiKey,
+      toolSchemas,
+    });
     setReasoning(plan.reasoning);
     setTasks(plan.tasks);
 
@@ -97,10 +105,6 @@ export function useMcp({isTesting = false}: {isTesting?: boolean} = {}) {
       console.log("no plan needed, reason:", plan.reasoning);
       return { toolSystemMessage: null, runSnapshot: null };
     }
-
-    // IMPORTANT: fetch the exact MCP tool schemas once and inject them into the tool-call generator context,
-    // so the model doesn't hallucinate argument shapes.
-    const toolSchemas = await fetchMcpToolSchemas();
     const currentTasks = plan.tasks;
     let currentReasoning = plan.reasoning;
 
@@ -202,11 +206,13 @@ async function planMcpTasks(args: {
   apiMessages: ApiMessage[];
   agent: ChatAgent;
   apiKey: string;
+  toolSchemas: McpMcpToolSchema[] | null;
 }): Promise<McpPlan> {
-  const { apiMessages, agent, apiKey } = args;
+  const { apiMessages, agent, apiKey, toolSchemas } = args;
 
   // Keep the planner context bounded to reduce cost/latency.
   const context = apiMessages.slice(-3);
+  const toolNames = toolSchemas?.map((tool) => tool.name) ?? [];
 
   const plannerSystem: ApiMessage = {
     role: 'system',
@@ -215,14 +221,9 @@ async function planMcpTasks(args: {
 
   const plannerUser: ApiMessage = {
     role: 'user',
-    content: JSON.stringify(
-      {
-        conversation: context,
-        note: 'Plan tool calls (if any) to help answer the last user request.',
-      },
-      null,
-      2
-    ),
+    content: PLANNER_USER_MESSAGE
+      .replace('{{conversation}}', JSON.stringify(context, null, 2))
+      .replace('{{tools}}', toolNames.join(', ')),
   };
 
   const plannerModel =
@@ -303,7 +304,7 @@ async function evaluateResult(args: {
 }> {
   const { resultsByTask, agent, apiKey, apiMessages } = args;
 
-  const context = JSON.stringify(apiMessages.slice(-3));
+  const context = JSON.stringify(apiMessages.slice(-3), null, 2);
 
   const sys: ApiMessage = {
     role: 'system',
@@ -313,8 +314,7 @@ async function evaluateResult(args: {
   const user: ApiMessage = {
     role: 'user',
     content: RESULT_EVALUATION_USER_MESSAGE
-      .replace('{{user_message}}', getLastUserMessageText(apiMessages))
-      .replace('{{context}}', context)
+      .replace('{{conversation}}', context)
       .replace('{{task_execution_results}}', JSON.stringify(resultsByTask)),
   };
 
@@ -601,7 +601,17 @@ const PLANNER_SYSTEM_PROMPT = `
 You are a task planner for using MCP tools.
 Your job: decide whether MCP tools are needed, and if yes, produce a short plain-text task list.
 
-# Output MUST be plain text (no JSON, no markdown fences) in exactly this format:
+# Rules:
+- Only say NEEDED: YES if the user is asking about database data/schema.
+- Keep tasks <= 10.
+- Tasks should be concrete and actionable (e.g. "List tables", "Describe users table", "Query last 10 rows from orders").
+
+# Notes:
+- You will be given the conversation history and the list of tools available to understand the requirement(s) and know what is possible to be executed.
+- Think step by step.
+- The task description should be concise and actionable.
+
+# Output: MUST be plain text (no JSON, no markdown fences) in exactly this format:
 REASONING:
 <brief why/why not; mention what info is missing if any>
 NEEDED: YES|NO
@@ -609,14 +619,18 @@ TASKS:
 1. <task>
 2. <task>
 ...
+`;
 
-# Rules:
-- Only say NEEDED: YES if the user is asking about database data/schema.
-- Keep tasks <= 10.
-- Tasks should be concrete and actionable (e.g. "List tables", "Describe users table", "Query last 10 rows from orders").
+const PLANNER_USER_MESSAGE = `
+<Conversation>
+{{conversation}}
+</Conversation>
 
-# Notes:
-- Think step by step.
+<Tools>
+{{tools}}
+</Tools>
+
+Notes: Plan tool calls (if any) to help answer the last user request.
 `;
 
 const TOOL_GENERATOR_SYSTEM_PROMPT = `
@@ -649,6 +663,10 @@ You will be given the task execution results of the task execution and the user'
 - If the task execution is failed, return the evaluation text "SOLVED: NO".
 - Give the list of tasks that are still needed to be executed to answer the user's request.
 
+# Notes:
+- Please do not make up tasks that are not possible to be executed by the given tools.
+- The results needn't be the final answer to the requirement, but should be complete and contain all the information needed to answer the user's request.
+
 # Output MUST be plain text (no JSON, no markdown fences) in exactly this format:
 REASONING: <brief reasoning for the evaluation>
 SOLVED: YES | NO
@@ -659,13 +677,9 @@ TASKS:
 `;
 
 const RESULT_EVALUATION_USER_MESSAGE = `
-<UserMessage>
-{{user_message}}
-</UserMessage>
-
-<Context>
-{{context}}
-</Context>
+<Conversation>
+{{conversation}}
+</Conversation>
 
 <TaskExecutionResults>
 {{task_execution_results}}

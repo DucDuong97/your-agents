@@ -102,7 +102,6 @@ function LlmCallModal({
       });
 
       setNewResponse(response.content);
-      setIsEditingSystemPrompt(false);
       
     } catch (error) {
       setResendError(error instanceof Error ? error.message : 'Failed to resend API call');
@@ -353,9 +352,9 @@ export default function CallsPage() {
                   setSelected(null);
                 }
               }}
-              className="px-3 py-2 text-sm bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 rounded"
+              className="px-3 py-2 text-sm bg-red-500 hover:bg-red-600 text-white rounded"
             >
-              Clear
+              Clean Up
             </button>
           </div>
         </div>

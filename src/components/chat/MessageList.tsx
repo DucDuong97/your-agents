@@ -260,9 +260,6 @@ export default function MessageList({ messages, isGenerating, streamingContent, 
       {/* Loading indicator */}
       {isGenerating && !streamingContent && (
         <div className="message-container">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="font-semibold text-sm sm:text-base text-gray-700 dark:text-gray-300">AI</span>
-          </div>
           <div className="flex items-center">
             <div className="dot-typing"></div>
           </div>
