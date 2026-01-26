@@ -53,7 +53,7 @@ Example format: ["Prompt 1", "Prompt 2", "Prompt 3", "Prompt 4"]
         { role: 'system', content: 'You are a helpful assistant that generates example prompts.' },
         { role: 'user', content: promptGenerationMessage }
       ],
-      model: provider === 'openrouter' ? "openai/gpt-4o-mini" : "gpt-4o-mini",
+      model: provider === 'openrouter' ? "openai/gpt-5-nano" : "gpt-5-nano",
       apiKey,
       provider,
     });
@@ -278,7 +278,7 @@ Return ONLY the title text with no quotes, explanations, or additional formattin
         { role: 'user', content: titleGenerationMessage }
       ],
       // Always use gpt-4o for title generation, regardless of the agent's model
-      model: provider === 'openrouter' ? "openai/gpt-4o" : "gpt-4o",
+      model: provider === 'openrouter' ? "openai/gpt-5-nano" : "gpt-5-nano",
       apiKey,
       provider,
     });

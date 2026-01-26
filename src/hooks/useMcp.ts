@@ -4,6 +4,7 @@ import { useCallback, useState } from 'react';
 import type { ApiMessage } from '@/lib/openrouter';
 import { generateChatCompletion } from '@/lib/openrouter';
 import type { ChatAgent, Message } from '@/lib/db';
+import { getLastUserMessageText } from '@/lib/aiMessageUtils';
 
 export type McpToolName = 'mysql_query' | 'mysql_list_tables' | 'mysql_describe_table';
 
@@ -87,51 +88,81 @@ export function useMcp({isTesting = false}: {isTesting?: boolean} = {}) {
     setIsPlanning(true);
     reset();
 
+    const localResultsByTask: McpResultsByTask[] = [];
+    const plan = await planMcpTasks(args);
+    setReasoning(plan.reasoning);
+    setTasks(plan.tasks);
+
+    if (!plan.needed || !plan.tasks.length) {
+      console.log("no plan needed, reason:", plan.reasoning);
+      return { toolSystemMessage: null, runSnapshot: null };
+    }
+
+    // IMPORTANT: fetch the exact MCP tool schemas once and inject them into the tool-call generator context,
+    // so the model doesn't hallucinate argument shapes.
+    const toolSchemas = await fetchMcpToolSchemas();
+    const currentTasks = plan.tasks;
+    let currentReasoning = plan.reasoning;
+
     try {
-      const plan = await planMcpTasks(args);
-      setReasoning(plan.reasoning);
-      setTasks(plan.tasks);
+      for (let i = 0; i < 3; i++) {
+        // From this point on, we consider "MySQL MCP running" (tool execution), excluding planner time.
+        setIsExecuting(true);
 
-      if (!plan.needed || !plan.tasks.length) {
-        console.log("no plan needed, reason:", plan.reasoning);
-        return { toolSystemMessage: null, runSnapshot: null };
-      }
+        for (const task of currentTasks) {
+          const plannedCalls = await planMcpToolCallsForTask({
+            task,
+            apiMessages: args.apiMessages,
+            agent: args.agent,
+            apiKey: args.apiKey,
+            priorResults: localResultsByTask.map(({ task: t, results }) => ({ task: t, results })),
+            toolSchemas,
+          });
 
-      // IMPORTANT: fetch the exact MCP tool schemas once and inject them into the tool-call generator context,
-      // so the model doesn't hallucinate argument shapes.
-      const toolSchemas = await fetchMcpToolSchemas();
+          setToolCallsByTask((prev) => [...prev, { task, calls: plannedCalls }]);
 
-      // From this point on, we consider "MySQL MCP running" (tool execution), excluding planner time.
-      setIsExecuting(true);
-      const localResultsByTask: McpResultsByTask[] = [];
+          const results = await runToolCallsDirect({ 
+            calls: plannedCalls,
+            env: args.agent.mysqlMcpEnv || 'local'
+          });
+          const entry: McpResultsByTask = { task, calls: plannedCalls, results };
+          localResultsByTask.push(entry);
+          setResultsByTask((prev) => [...prev, entry]);
+        }
 
-      for (const task of plan.tasks) {
-        const plannedCalls = await planMcpToolCallsForTask({
-          task,
-          apiMessages: args.apiMessages,
+        const resultEvaluation = await evaluateResult({
+          resultsByTask: localResultsByTask,
           agent: args.agent,
           apiKey: args.apiKey,
-          priorResults: localResultsByTask.map(({ task: t, results }) => ({ task: t, results })),
-          toolSchemas,
+          apiMessages : args.apiMessages,
         });
 
-        setToolCallsByTask((prev) => [...prev, { task, calls: plannedCalls }]);
+        console.log('resultEvaluation', resultEvaluation);
 
-        const results = await runToolCallsDirect({ calls: plannedCalls });
-        const entry: McpResultsByTask = { task, calls: plannedCalls, results };
-        localResultsByTask.push(entry);
-        setResultsByTask((prev) => [...prev, entry]);
+        if (resultEvaluation.solved) {
+          break;
+        }
+
+        currentReasoning = `${currentReasoning}\n-----EVALUATION ${i + 1}-----\n${resultEvaluation.reasoning}`;
+        setReasoning(currentReasoning);
+
+        // If no new tasks and not solved, break to avoid infinite loop
+        if (resultEvaluation.tasks.length === 0) {
+          break;
+        }
+        
+        currentTasks.push(...resultEvaluation.tasks);
+        setTasks([...currentTasks]);
       }
 
       const toolSystemMessage = buildMcpToolSystemMessage({
-        tasks: plan.tasks,
         resultsByTask: localResultsByTask.map(({ task: t, results }) => ({ task: t, results })),
       });
 
       const runSnapshot: AgentRunSnapshot = {
         version: 1,
         createdAt: new Date().toISOString(),
-        reasoning: plan.reasoning,
+        reasoning: currentReasoning,
         tasks: plan.tasks,
         toolCallsByTask: localResultsByTask.map((t) => ({ task: t.task, calls: t.calls })),
         resultsByTask: localResultsByTask,
@@ -167,7 +198,7 @@ export function useMcp({isTesting = false}: {isTesting?: boolean} = {}) {
  * Step 1: generate a plain-text task list describing what to do (no JSON tool calls here).
  * The tool calls are generated per task, taking prior results as input.
  */
-export async function planMcpTasks(args: {
+async function planMcpTasks(args: {
   apiMessages: ApiMessage[];
   agent: ChatAgent;
   apiKey: string;
@@ -195,7 +226,7 @@ export async function planMcpTasks(args: {
   };
 
   const plannerModel =
-    agent.provider === 'openrouter' ? 'openai/gpt-4o-mini' : 'gpt-4o-mini';
+    agent.provider === 'openrouter' ? 'openai/o3' : 'o3';
 
   const resp = await generateChatCompletion({
     title: 'MySQL MCP Task Planner',
@@ -211,7 +242,7 @@ export async function planMcpTasks(args: {
 /**
  * Step 2..N: for each task, generate tool calls (JSON) using prior task results as context.
  */
-export async function planMcpToolCallsForTask(args: {
+async function planMcpToolCallsForTask(args: {
   task: string;
   apiMessages: ApiMessage[];
   agent: ChatAgent;
@@ -260,10 +291,88 @@ export async function planMcpToolCallsForTask(args: {
   return normalizeMcpCalls(parsed);
 }
 
-export async function runToolCallsDirect(args: {
+async function evaluateResult(args: {
+  resultsByTask: McpResultsByTask[];
+  agent: ChatAgent;
+  apiKey: string;
+  apiMessages: ApiMessage[];
+}): Promise<{
+  solved: boolean;
+  reasoning: string;
+  tasks: string[];
+}> {
+  const { resultsByTask, agent, apiKey, apiMessages } = args;
+
+  const context = JSON.stringify(apiMessages.slice(-3));
+
+  const sys: ApiMessage = {
+    role: 'system',
+    content: RESULT_EVALUATION_SYSTEM_PROMPT,
+  };
+
+  const user: ApiMessage = {
+    role: 'user',
+    content: RESULT_EVALUATION_USER_MESSAGE
+      .replace('{{user_message}}', getLastUserMessageText(apiMessages))
+      .replace('{{context}}', context)
+      .replace('{{task_execution_results}}', JSON.stringify(resultsByTask)),
+  };
+
+  const plannerModel =
+    agent.provider === 'openrouter' ? 'openai/o3' : 'o3';
+
+  const resp = await generateChatCompletion({
+    title: 'MySQL MCP Result Evaluator',
+    messages: [sys, user],
+    model: plannerModel,
+    apiKey,
+    provider: agent.provider,
+  });
+
+  return parseMcpResultEvaluation(resp.content);
+}
+
+function parseMcpResultEvaluation(text: string): {
+  solved: boolean;
+  reasoning: string;
+  tasks: string[];
+} {
+  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+  const solvedLine = lines.find((l) => l.toUpperCase().startsWith('SOLVED:'));
+  const solved = solvedLine?.toUpperCase().includes('YES') ?? false;
+  const reasoningLine = lines.find((l) => l.toUpperCase().startsWith('REASONING:'));
+  const reasoning = reasoningLine?.slice('REASONING:'.length).trim() ?? '';
+  
+  // Find tasks section - handle both "TASKS:" header and numbered lists
+  const tasksLineIndex = lines.findIndex((l) => l.toUpperCase().startsWith('TASKS:'));
+  const newTasks: string[] = [];
+  
+  if (tasksLineIndex !== -1) {
+    // Get tasks after TASKS: line
+    const taskLines = lines.slice(tasksLineIndex + 1);
+    for (const line of taskLines) {
+      // Stop if we hit another section header
+      if (/^(REASONING|SOLVED):/i.test(line)) break;
+      
+      // Handle numbered lists (e.g., "1. task" or "1) task")
+      const numberedMatch = line.match(/^\d+[.)]\s*(.+)$/);
+      if (numberedMatch) {
+        newTasks.push(numberedMatch[1].trim());
+      } else if (line.length > 0) {
+        // Also accept non-numbered lines as tasks
+        newTasks.push(line);
+      }
+    }
+  }
+  
+  return { solved, reasoning, tasks: newTasks };
+}
+
+async function runToolCallsDirect(args: {
   calls: McpPlannedCall[];
+  env?: 'local' | 'dev' | 'hotfix' | 'lab' | 'prod';
 }): Promise<McpToolResult[]> {
-  const { calls } = args;
+  const { calls, env = 'local' } = args;
   if (!calls.length) return [];
 
   const TOOL_CALL_TIMEOUT_MS = 10_000;
@@ -271,7 +380,7 @@ export async function runToolCallsDirect(args: {
   for (const call of calls) {
     try {
       const result = await withTimeout(
-        mcpHttpCallTool(call.name, call.arguments),
+        mcpHttpCallTool(call.name, call.arguments, env),
         TOOL_CALL_TIMEOUT_MS,
         `Tool call timed out after ${TOOL_CALL_TIMEOUT_MS / 1000}s: ${call.name}`
       );
@@ -299,11 +408,10 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, timeoutMessage: 
   });
 }
 
-export function buildMcpToolSystemMessage(args: {
-  tasks: string[];
+function buildMcpToolSystemMessage(args: {
   resultsByTask: Array<{ task: string; results: McpToolResult[] }>;
 }): Message | null {
-  const { tasks, resultsByTask } = args;
+  const { resultsByTask } = args;
 
   return {
     role: 'system',
@@ -313,7 +421,7 @@ export function buildMcpToolSystemMessage(args: {
     rawContent: [
       '[MCP]',
       'MCP task execution results. Use these results as ground truth and cite them when answering:',
-      JSON.stringify({ tasks, resultsByTask }, null, 2),
+      JSON.stringify({ resultsByTask }, null, 2),
     ].join('\n'),
   };
 }
@@ -357,9 +465,13 @@ async function mcplHttpListTools(): Promise<McpHttpToolSchema[] | null> {
 
 async function mcpHttpCallTool(
   name: McpToolName,
-  args: Record<string, unknown>
+  args: Record<string, unknown>,
+  env: 'local' | 'dev' | 'hotfix' | 'lab' | 'prod' = 'local'
 ): Promise<{ content: McpToolResultContent[] }> {
-  const res = await fetch(getMcpHttpBaseUrl(), {
+  const baseUrl = getMcpHttpBaseUrl();
+  const separator = baseUrl.includes('?') ? '&' : '?';
+  const url = `${baseUrl}${separator}env=${env}`;
+  const res = await fetch(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ name, arguments: args }),
@@ -488,26 +600,33 @@ async function fetchMcpToolSchemas(): Promise<McpMcpToolSchema[] | null> {
 const PLANNER_SYSTEM_PROMPT = `
 You are a task planner for using MCP tools.
 Your job: decide whether MCP tools are needed, and if yes, produce a short plain-text task list.
-Output MUST be plain text (no JSON, no markdown fences) in exactly this format:
-NEEDED: YES|NO
+
+# Output MUST be plain text (no JSON, no markdown fences) in exactly this format:
 REASONING:
 <brief why/why not; mention what info is missing if any>
+NEEDED: YES|NO
 TASKS:
 1. <task>
 2. <task>
 ...
-Rules:
+
+# Rules:
 - Only say NEEDED: YES if the user is asking about database data/schema.
 - Keep tasks <= 10.
 - Tasks should be concrete and actionable (e.g. "List tables", "Describe users table", "Query last 10 rows from orders").
+
+# Notes:
+- Think step by step.
 `;
 
 const TOOL_GENERATOR_SYSTEM_PROMPT = `
 You are a tool generator for using MCP tools.
 Your job: generate MCP tool calls for ONE task.
-Return ONLY strict JSON of the form:
+
+# Return ONLY strict JSON of the form:
 { "calls": Array<{ "name": "tool_name", "arguments": object }> }
-Rules:
+
+# Rules:
 - Keep calls <= 3.
 - Do not repeat tool calls from previous tasks.
 - You will be given the tool schemas (from MCP tools/list). The call.arguments MUST match the tool inputSchema exactly:
@@ -515,4 +634,40 @@ Rules:
   - Do not include extra keys (additionalProperties is false).
   - Only include optional keys when needed.
 - If no tool calls are needed for this task, return {"calls":[]}.
+- Do not assume any data for the arguments, try to retrieve necessary data first if possible.
+`;
+
+const RESULT_EVALUATION_SYSTEM_PROMPT = `
+You are a result evaluator.
+
+You will be given the task execution results of the task execution and the user's request. Your job is to evaluate the results of the task execution.
+
+# Rules:
+- Evaluate the results of the task execution.
+- Think step by step, give the reasoning for the evaluation.
+- If the task execution is successful, return the evaluation text "SOLVED: YES".
+- If the task execution is failed, return the evaluation text "SOLVED: NO".
+- Give the list of tasks that are still needed to be executed to answer the user's request.
+
+# Output MUST be plain text (no JSON, no markdown fences) in exactly this format:
+REASONING: <brief reasoning for the evaluation>
+SOLVED: YES | NO
+TASKS:
+1. <task>
+2. <task>
+...
+`;
+
+const RESULT_EVALUATION_USER_MESSAGE = `
+<UserMessage>
+{{user_message}}
+</UserMessage>
+
+<Context>
+{{context}}
+</Context>
+
+<TaskExecutionResults>
+{{task_execution_results}}
+</TaskExecutionResults>
 `;

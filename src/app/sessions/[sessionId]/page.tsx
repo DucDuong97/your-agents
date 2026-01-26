@@ -229,7 +229,7 @@ export default function SessionPage() {
       // Optional: inject relevant stored knowledge as a system message
       if (selectedAgent.knowledgeGenerationPrompt && Object.keys(selectedAgent.knowledge ?? {}).length > 0) {
         console.log('Building knowledge system message...');
-        const { knowledgeSystemMessage } = await buildKnowledgeSystemMessage(apiMessages);
+        const { knowledgeSystemMessage } = await buildKnowledgeSystemMessage(updatedMessages);
 
         if (knowledgeSystemMessage) {
           updatedMessages = [...updatedMessages, knowledgeSystemMessage];

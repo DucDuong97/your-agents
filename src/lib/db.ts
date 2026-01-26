@@ -60,6 +60,7 @@ export interface ChatAgent {
   knowledge?: Record<string, string[]>;
   /** If enabled, this agent can use the local MCP server (see `mcp/sql.js`). */
   useMysqlMcp?: boolean;
+  mysqlMcpEnv?: 'local' | 'dev' | 'hotfix' | 'lab' | 'prod';
   createdAt: string;
   updatedAt: string;
 }

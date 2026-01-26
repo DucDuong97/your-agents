@@ -1,5 +1,5 @@
 import type { Message } from '@/lib/db';
-import type { ContentItem } from '@/lib/openrouter';
+import type { ApiMessage, ContentItem } from '@/lib/openrouter';
 
 export function normalizeString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
@@ -42,8 +42,8 @@ export function getMessageText(message: Message | null): string {
  * User-only helper: extracts *only* the user text parts (ignores images) from `rawContent`.
  * Falls back to `msg.content` if parsing fails or there's no text part.
  */
-export function safeExtractUserText(msg: Message): string {
-  if (msg.rawContent && msg.role === 'user') {
+export function safeExtractUserText(msg: Message | ApiMessage): string {
+  if ('rawContent' in msg && msg.rawContent && msg.role === 'user') {
     try {
       const parsed = JSON.parse(msg.rawContent) as unknown;
       if (!Array.isArray(parsed)) return normalizeString(msg.content);
@@ -68,7 +68,7 @@ export function stripFences(text: string): string {
   return trimmed;
 }
 
-export function getLastUserMessageText(messages: Message[]): string {
+export function getLastUserMessageText(messages: Message[] | ApiMessage[]): string {
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i];
     if (m?.role === 'user') return safeExtractUserText(m);

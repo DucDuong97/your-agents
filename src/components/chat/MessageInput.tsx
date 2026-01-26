@@ -83,7 +83,7 @@ export default function MessageInput({
             {...messageRegister}
             className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white resize-none text-base sm:text-sm"
             placeholder="Type your message..."
-            rows={1}
+            rows={2}
             style={{ minHeight: '44px', maxHeight: '160px' }}
             disabled={isSubmitting}
             onKeyDown={handleKeyDown}

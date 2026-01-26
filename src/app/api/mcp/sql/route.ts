@@ -13,18 +13,57 @@ import mysql from 'mysql2/promise';
  * - MCP_MAX_ROWS (default 1000) applied to SELECT/WITH ... SELECT without LIMIT
  */
 
-function requiredEnv(name: string): string {
-  const v = process.env[name];
-  if (!v) throw new Error(`Missing required environment variable: ${name}`);
+function requiredEnv(name: string, env?: string): string {
+  const envPrefix = env ? `${env.toUpperCase()}_` : '';
+  const envName = `${envPrefix}${name}`;
+  const v = process.env[envName];
+  if (!v) throw new Error(`Missing required environment variable: ${envName}`);
   return v;
 }
 
-function intFromEnv(name: string, fallback: number): number {
-  const raw = process.env[name];
+function intFromEnv(name: string, fallback: number, env?: string): number {
+  const envPrefix = env ? `${env.toUpperCase()}_` : '';
+  const envName = `${envPrefix}${name}`;
+  const raw = process.env[envName];
   if (!raw) return fallback;
   const n = Number.parseInt(raw, 10);
   if (!Number.isFinite(n)) return fallback;
   return n;
+}
+
+// Default sensitive fields to mask
+const SENSITIVE_FIELDS = ['access_token', 'email'];
+
+function maskSensitiveValue(value: unknown): string {
+  if (value === null || value === undefined) return '[MASKED]';
+  const str = String(value);
+  if (!str) return '[MASKED]';
+  // Show first 2 and last 2 characters, mask the rest
+  if (str.length <= 4) return '****';
+  return `${str.substring(0, 2)}${'*'.repeat(Math.min(str.length - 4, 20))}${str.substring(str.length - 2)}`;
+}
+
+function maskSensitiveFields(rows: unknown, sensitiveFields: string[] = SENSITIVE_FIELDS): unknown {
+  if (!Array.isArray(rows)) return rows;
+  
+  return rows.map((row) => {
+    if (!row || typeof row !== 'object') return row;
+    
+    const maskedRow: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(row as Record<string, unknown>)) {
+      // Case-insensitive check for sensitive fields
+      const isSensitive = sensitiveFields.some(
+        (field) => field.toLowerCase().includes(key.toLowerCase())
+      );
+      
+      if (isSensitive && value !== null && value !== undefined) {
+        maskedRow[key] = maskSensitiveValue(value);
+      } else {
+        maskedRow[key] = value;
+      }
+    }
+    return maskedRow;
+  });
 }
 
 function formatCellValue(value: unknown): string {
@@ -51,14 +90,17 @@ function formatCellValue(value: unknown): string {
   }
 }
 
-function rowsToStructuredPlainText(rows: unknown): string {
+function rowsToStructuredPlainText(rows: unknown, sensitiveFields: string[] = SENSITIVE_FIELDS): string {
   if (!Array.isArray(rows)) return formatCellValue(rows);
   if (rows.length === 0) return 'Row count: 0\nRows: (none)';
+
+  // Mask sensitive fields before processing
+  const maskedRows = maskSensitiveFields(rows, sensitiveFields) as unknown[];
 
   const columns: string[] = [];
   const seen = new Set<string>();
 
-  for (const r of rows.slice(0, 50)) {
+  for (const r of maskedRows.slice(0, 50)) {
     if (r && typeof r === 'object') {
       for (const k of Object.keys(r as Record<string, unknown>)) {
         if (!seen.has(k)) {
@@ -70,12 +112,12 @@ function rowsToStructuredPlainText(rows: unknown): string {
   }
 
   const lines: string[] = [];
-  lines.push(`Row count: ${rows.length}`);
+  lines.push(`Row count: ${maskedRows.length}`);
   if (columns.length) lines.push(`Columns: ${columns.join(', ')}`);
   lines.push('Rows:');
 
-  for (let i = 0; i < rows.length; i++) {
-    const row = rows[i];
+  for (let i = 0; i < maskedRows.length; i++) {
+    const row = maskedRows[i];
     lines.push(`- Row ${i + 1}:`);
     if (!row || typeof row !== 'object') {
       lines.push(`  value: ${formatCellValue(row)}`);
@@ -305,21 +347,23 @@ function ensureLimit(sql: string, maxRows: number): string {
   return hasSemi ? `${limited};` : limited;
 }
 
-let pool: mysql.Pool | null = null;
-function getPool(): mysql.Pool {
-  if (!pool) {
-    pool = mysql.createPool({
-      host: requiredEnv('MYSQL_HOST'),
-      port: intFromEnv('MYSQL_PORT', 3306),
-      user: requiredEnv('MYSQL_USER'),
-      password: requiredEnv('MYSQL_PASSWORD'),
-      database: requiredEnv('MYSQL_DATABASE'),
+const pools: Map<string, mysql.Pool> = new Map();
+
+function getPool(env?: string): mysql.Pool {
+  const envKey = env || 'local';
+  if (!pools.has(envKey)) {
+    pools.set(envKey, mysql.createPool({
+      host: requiredEnv('MYSQL_HOST', env),
+      port: intFromEnv('MYSQL_PORT', 3306, env),
+      user: requiredEnv('MYSQL_USER', env),
+      password: requiredEnv('MYSQL_PASSWORD', env),
+      database: requiredEnv('MYSQL_DATABASE', env),
       waitForConnections: true,
       connectionLimit: 10,
       queueLimit: 0,
-    });
+    }));
   }
-  return pool;
+  return pools.get(envKey)!;
 }
 
 type ToolTextResult = { type: 'text'; text: string };
@@ -335,9 +379,9 @@ function err(text: string, status = 400): NextResponse {
   return NextResponse.json(body, { status });
 }
 
-async function handleListTables(): Promise<NextResponse> {
+async function handleListTables(env?: string): Promise<NextResponse> {
   try {
-    const [rows] = await getPool().execute(
+    const [rows] = await getPool(env).execute(
       `SELECT TABLE_NAME AS tableName
        FROM INFORMATION_SCHEMA.TABLES
        WHERE TABLE_SCHEMA = DATABASE()
@@ -350,7 +394,7 @@ async function handleListTables(): Promise<NextResponse> {
   }
 }
 
-async function handleDescribeTable(table: string): Promise<NextResponse> {
+async function handleDescribeTable(table: string, env?: string): Promise<NextResponse> {
   const t = table.trim();
   if (!t) return err('Missing required argument: table', 400);
   if (!/^[A-Za-z0-9_]+$/u.test(t)) {
@@ -358,7 +402,7 @@ async function handleDescribeTable(table: string): Promise<NextResponse> {
   }
 
   try {
-    const [rows] = await getPool().execute(
+    const [rows] = await getPool(env).execute(
       `SELECT
          COLUMN_NAME AS columnName,
          COLUMN_TYPE AS columnType,
@@ -379,7 +423,7 @@ async function handleDescribeTable(table: string): Promise<NextResponse> {
   }
 }
 
-async function handleQuery(sql: string, params: unknown[]): Promise<NextResponse> {
+async function handleQuery(sql: string, params: unknown[], env?: string): Promise<NextResponse> {
   if (!isReadOnlySql(sql)) {
     return err(
       'Rejected: only read-only SQL is allowed (SELECT/SHOW/DESCRIBE/EXPLAIN, and WITH ... SELECT). Multiple statements and writes are blocked.',
@@ -387,11 +431,11 @@ async function handleQuery(sql: string, params: unknown[]): Promise<NextResponse
     );
   }
 
-  const maxRows = intFromEnv('MCP_MAX_ROWS', 1000);
+  const maxRows = intFromEnv('MCP_MAX_ROWS', 1000, env);
   const effectiveSql = ensureLimit(sql, maxRows);
 
   try {
-    const [rows] = await getPool().execute(effectiveSql, Array.isArray(params) ? params : []);
+    const [rows] = await getPool(env).execute(effectiveSql, Array.isArray(params) ? params : []);
     const text = `SQL:\n${effectiveSql}\n\n${rowsToStructuredPlainText(rows)}`;
     return ok(text);
   } catch (e) {
@@ -402,6 +446,7 @@ async function handleQuery(sql: string, params: unknown[]): Promise<NextResponse
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const tool = (searchParams.get('tool') || 'list').trim();
+  const env = (searchParams.get('env') || 'local').trim() as 'local' | 'dev' | 'prod';
 
   if (tool === 'list') {
     return NextResponse.json({
@@ -445,8 +490,8 @@ export async function GET(request: NextRequest) {
   }
 
   // Convenience GETs (optional)
-  if (tool === 'mysql_list_tables') return await handleListTables();
-  if (tool === 'mysql_describe_table') return await handleDescribeTable(searchParams.get('table') || '');
+  if (tool === 'mysql_list_tables') return await handleListTables(env);
+  if (tool === 'mysql_describe_table') return await handleDescribeTable(searchParams.get('table') || '', env);
 
   return err(`Unknown tool: ${tool}`, 400);
 }
@@ -459,6 +504,9 @@ export async function POST(request: NextRequest) {
     return err('Invalid JSON body', 400);
   }
 
+  const { searchParams } = new URL(request.url);
+  const env = (searchParams.get('env') || 'local').trim() as 'local' | 'dev' | 'prod';
+
   const { name, arguments: args } = (body ?? {}) as {
     name?: unknown;
     arguments?: unknown;
@@ -467,17 +515,17 @@ export async function POST(request: NextRequest) {
   if (typeof name !== 'string' || !name.trim()) return err('Missing tool name', 400);
   const toolName = name.trim();
 
-  if (toolName === 'mysql_list_tables') return await handleListTables();
+  if (toolName === 'mysql_list_tables') return await handleListTables(env);
 
   if (toolName === 'mysql_describe_table') {
     const table = (args as { table?: unknown } | null)?.table;
-    return await handleDescribeTable(typeof table === 'string' ? table : '');
+    return await handleDescribeTable(typeof table === 'string' ? table : '', env);
   }
 
   if (toolName === 'mysql_query') {
     const sql = (args as { sql?: unknown } | null)?.sql;
     const params = (args as { params?: unknown } | null)?.params;
-    return await handleQuery(typeof sql === 'string' ? sql : '', Array.isArray(params) ? params : []);
+    return await handleQuery(typeof sql === 'string' ? sql : '', Array.isArray(params) ? params : [], env);
   }
 
   return err(`Unknown tool: ${toolName}`, 400);

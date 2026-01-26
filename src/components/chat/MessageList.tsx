@@ -80,7 +80,7 @@ export default function MessageList({ messages, isGenerating, streamingContent, 
   const displayMessages = messages.filter((message) => {
     if (message.role !== 'system') return true;
     // Show only knowledge system messages
-    return typeof message.content === 'string' && message.content.includes('[KNOWLEDGE]');
+    return typeof message.rawContent === 'string' && message.rawContent.includes('[KNOWLEDGE]');
   });
 
   return (

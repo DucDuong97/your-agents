@@ -37,6 +37,7 @@ export default function AgentModal({ initialAgent, onSubmit, onClose }: AgentMod
         lastSent: undefined
       },
       useMysqlMcp: initialAgent.useMysqlMcp ?? false,
+      mysqlMcpEnv: initialAgent.mysqlMcpEnv ?? 'local',
     } : {
       name: '',
       systemPrompt: 'You are a helpful assistant.',
@@ -53,6 +54,7 @@ export default function AgentModal({ initialAgent, onSubmit, onClose }: AgentMod
         lastSent: undefined
       },
       useMysqlMcp: false,
+      mysqlMcpEnv: 'local',
     },
   });
 
@@ -60,6 +62,7 @@ export default function AgentModal({ initialAgent, onSubmit, onClose }: AgentMod
   const currentModelName = watch('modelName');
   const currentSystemPrompt = watch('systemPrompt');
   const currentKnowledge = watch('knowledge');
+  const useMysqlMcp = watch('useMysqlMcp');
   
   // Get models for the current provider
   const models = getModels(currentProvider);
@@ -297,8 +300,32 @@ export default function AgentModal({ initialAgent, onSubmit, onClose }: AgentMod
                   Allow this agent to use MySQL MCP
                 </label>
               </div>
+              {useMysqlMcp && (
+                <div className="mt-3 ml-6">
+                  <label
+                    htmlFor="mysqlMcpEnv"
+                    className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+                  >
+                    Database Environment
+                  </label>
+                  <select
+                    id="mysqlMcpEnv"
+                    {...register('mysqlMcpEnv')}
+                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+                  >
+                    <option value="local">Local</option>
+                    <option value="dev">Dev</option>
+                    <option value="hotfix">Hotfix</option>
+                    <option value="lab">Lab</option>
+                    <option value="prod">Prod</option>
+                  </select>
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    Select the database environment to connect to.
+                  </p>
+                </div>
+              )}
               <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                Enables access to the local MySQL MCP server tools (query/tables/describe) for this agent.
+                Enables access to the MySQL MCP server tools (query/tables/describe) for this agent.
               </p>
             </div>
             

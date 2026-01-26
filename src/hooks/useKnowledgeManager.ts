@@ -113,7 +113,6 @@ export function useKnowledgeManager(agent: ChatAgent | null | undefined) {
     [agent, lastGeneratedEntry]
   );
 
-
   const buildKnowledgeSystemMessage = useCallback(async (apiMessages: ApiMessage[]) => {
     if (!agent) return { knowledgeSystemMessage: null as Message | null };
 
@@ -169,7 +168,7 @@ export function useKnowledgeManager(agent: ChatAgent | null | undefined) {
       role: 'system',
       id: `${Date.now()}-knowledge`,
       createdAt: new Date().toISOString(),
-      content: 'Used knowledge: ' + knowledgeLines.join('\n'),
+      content: 'Used knowledge: ' + selectedKeys.join(', '),
       rawContent: [
         '[KNOWLEDGE]',
         'Relevant stored knowledge (use if helpful):',
