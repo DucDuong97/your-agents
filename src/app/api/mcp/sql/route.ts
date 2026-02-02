@@ -32,7 +32,7 @@ function intFromEnv(name: string, fallback: number, env?: string): number {
 }
 
 // Default sensitive fields to mask
-const SENSITIVE_FIELDS = ['access_token', 'email'];
+const SENSITIVE_FIELDS = ['access_token', 'email', 'secret'];
 
 function maskSensitiveValue(value: unknown): string {
   if (value === null || value === undefined) return '[MASKED]';
@@ -53,7 +53,7 @@ function maskSensitiveFields(rows: unknown, sensitiveFields: string[] = SENSITIV
     for (const [key, value] of Object.entries(row as Record<string, unknown>)) {
       // Case-insensitive check for sensitive fields
       const isSensitive = sensitiveFields.some(
-        (field) => field.toLowerCase().includes(key.toLowerCase())
+        (field) => key.toLowerCase().includes(field.toLowerCase())
       );
       
       if (isSensitive && value !== null && value !== undefined) {
