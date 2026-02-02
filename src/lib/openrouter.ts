@@ -157,21 +157,60 @@ export async function generateChatCompletion(options: ChatCompletionOptions): Pr
     };
 
     if (provider === 'openrouter') {
-      // Call OpenRouter API with streaming
-      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
-          'HTTP-Referer': window.location.origin,
-          'X-Title': 'Next.js Chat Bot',
-        },
-        body: JSON.stringify(requestBody),
-      });
+      // Call OpenRouter API with streaming (with retry logic for 500+ errors)
+      let response: Response | null = null;
+      let lastError: Error | null = null;
+      
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${apiKey}`,
+              'HTTP-Referer': window.location.origin,
+              'X-Title': 'Next.js Chat Bot',
+            },
+            body: JSON.stringify(requestBody),
+          });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(`OpenRouter API error: ${response.status} ${JSON.stringify(errorData)}`);
+          if (response.ok) {
+            break; // Success, exit retry loop
+          }
+
+          // If status is 500+, retry (unless it's the last attempt)
+          if (response.status > 500 && attempt < 2) {
+            const errorData = await response.json().catch(() => ({}));
+            lastError = new Error(`OpenRouter API error: ${response.status} ${JSON.stringify(errorData)}`);
+            // Wait before retrying (exponential backoff: 1s, 2s)
+            await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
+            continue;
+          }
+
+          // For non-500 errors or last attempt, throw immediately
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(`OpenRouter API error: ${response.status} ${JSON.stringify(errorData)}`);
+        } catch (error) {
+          // Network errors or other exceptions - retry if not last attempt
+          if (attempt === 2) {
+            throw error;
+          }
+          lastError = error instanceof Error ? error : new Error(String(error));
+          // Wait before retrying (exponential backoff: 1s, 2s)
+          await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
+        }
+      }
+
+      // If we exhausted retries and still have an error, throw it
+      if (!response || !response.ok) {
+        if (lastError) {
+          throw lastError;
+        }
+        if (response) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(`OpenRouter API error: ${response.status} ${JSON.stringify(errorData)}`);
+        }
+        throw new Error('OpenRouter API error: No response received after retries');
       }
 
       if (!isStreaming) {
