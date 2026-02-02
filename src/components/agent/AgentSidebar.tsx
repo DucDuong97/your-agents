@@ -172,7 +172,7 @@ export default function AgentSidebar(props: Props) {
         {/* Scroll area */}
         <div className="flex-1 min-h-0 overflow-y-auto">
           {/* Sticky planning section */}
-          <div className="sticky top-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 max-h-[40vh] overflow-y-auto">
+          <div className="sticky top-0 bg-white dark:bg-gray-900 border-b-3 border-gray-200 dark:border-gray-800 max-h-[40vh] overflow-y-auto">
             <div className="px-4 py-3 space-y-3">
               <div>
                 <div className="text-xs font-semibold text-gray-700 dark:text-gray-300">
