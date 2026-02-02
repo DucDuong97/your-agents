@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { AddKnowledgeConfirmationModal } from './KnowledgeEditor';
 
 // Import commonly used languages
 import typescript from 'react-syntax-highlighter/dist/esm/languages/prism/typescript';
@@ -24,6 +25,8 @@ interface MessageListProps {
   isGenerating: boolean;
   streamingContent: string | null;
   onAssistantMessageClick?: (message: Message) => void;
+  knowledge?: Record<string, string[]>;
+  onUpdateKnowledge?: (originalKey: string, newKey: string, value: string, originalValues: string[]) => Promise<void>;
 }
 
 // Create a separate CodeBlock component to handle the tooltip state
@@ -76,29 +79,72 @@ const CodeBlock = ({ language, code }: { language: string; code: string }) => {
   );
 };
 
-export default function MessageList({ messages, isGenerating, streamingContent, onAssistantMessageClick }: MessageListProps) {
+// Helper function to extract keys from knowledge system message content
+function extractKnowledgeKeys(content: string): string[] {
+  if (!content.startsWith('[KNOWLEDGE]')) return [];
+  
+  // content is like: [KNOWLEDGE] Used knowledge: key1, key2, key3
+  const parts = content.split(':');
+  if (parts.length < 2) return [];
+  const keys = parts[1].split(',').map((k) => k.trim()).filter((k) => k.length > 0);
+  return keys;
+}
+
+export default function MessageList({ messages, isGenerating, streamingContent, onAssistantMessageClick, knowledge, onUpdateKnowledge }: MessageListProps) {
+  const [selectedKnowledgeKey, setSelectedKnowledgeKey] = useState<string | null>(null);
+  const [originalKnowledgeKey, setOriginalKnowledgeKey] = useState<string | null>(null);
+  const [selectedKnowledgeValue, setSelectedKnowledgeValue] = useState<string>('');
+  const [showKnowledgeModal, setShowKnowledgeModal] = useState(false);
+
   const displayMessages = messages.filter((message) => {
     if (message.role !== 'system') return true;
     // Show only knowledge system messages
-    return typeof message.rawContent === 'string' && message.rawContent.includes('[KNOWLEDGE]');
+    return typeof message.content === 'string' && message.content.startsWith('[KNOWLEDGE]');
   });
+
+  const handleTagClick = (key: string) => {
+    if (!knowledge || !onUpdateKnowledge) return;
+    
+    const values = knowledge[key];
+    // Get the latest value, or join all values if multiple
+    const value = values && values.length > 0 
+      ? values[values.length - 1] 
+      : '';
+    
+    setSelectedKnowledgeKey(key);
+    setOriginalKnowledgeKey(key);
+    setSelectedKnowledgeValue(value);
+    setShowKnowledgeModal(true);
+  };
+
+  const handleKnowledgeConfirm = async (newKey: string, value: string) => {
+    if (!onUpdateKnowledge || !originalKnowledgeKey || !knowledge) return;
+    
+    // Get the original values for the key
+    const originalValues = knowledge[originalKnowledgeKey] || [];
+    
+    // Call the update handler with original key, new key, value, and original values
+    await onUpdateKnowledge(originalKnowledgeKey, newKey, value, originalValues);
+    
+    setShowKnowledgeModal(false);
+    setSelectedKnowledgeKey(null);
+    setOriginalKnowledgeKey(null);
+    setSelectedKnowledgeValue('');
+  };
+
+  const handleKnowledgeCancel = () => {
+    setShowKnowledgeModal(false);
+    setSelectedKnowledgeKey(null);
+    setOriginalKnowledgeKey(null);
+    setSelectedKnowledgeValue('');
+  };
 
   return (
     <div className="space-y-4 sm:space-y-6 px-2 sm:px-4 py-2">
       {displayMessages.map((message) => (
         <div
           key={message.id}
-          className={[
-            'message-container',
-            message.role === 'assistant' && Boolean(message.agentRunSnapshot)
-              ? 'cursor-pointer'
-              : '',
-          ].join(' ')}
-          onClick={() => {
-            if (message.role !== 'assistant') return;
-            if (!message.agentRunSnapshot) return;
-            onAssistantMessageClick?.(message);
-          }}
+          className="message-container"
         >
           <div className="flex items-center gap-2 mb-1">
             <span className={`font-semibold text-sm sm:text-base ${
@@ -117,37 +163,52 @@ export default function MessageList({ messages, isGenerating, streamingContent, 
             <span className="text-[10px] sm:text-xs text-gray-500">
               {new Date(message.createdAt).toLocaleTimeString()}
             </span>
-            {message.role === 'assistant' && message.price && (
-              <div className="relative group ml-auto">
-                <span className="text-[10px] sm:text-xs text-gray-500 cursor-help">
-                  ${message.price.totalCost?.toFixed(6)} USD
-                </span>
-                <div className="absolute right-0 mt-1 w-60 bg-gray-800 text-white text-xs rounded py-2 px-3 z-10 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none">
-                  <div className="font-semibold mb-1">Price Breakdown:</div>
-                  <div className="grid grid-cols-2 gap-1">
-                    <span>Prompt Tokens:</span>
-                    <span className="text-right">{message.price.promptTokens?.toLocaleString()}</span>
-                    <span>Prompt Cost:</span>
-                    <span className="text-right">${message.price.promptCost?.toFixed(6)}</span>
-                    
-                    <span>Output Tokens:</span>
-                    <span className="text-right">{message.price.completionTokens?.toLocaleString()}</span>
-                    <span>Output Cost:</span>
-                    <span className="text-right">${message.price.completionCost?.toFixed(6)}</span>
-                    
-                    {message.price.imageCount ? (
-                      <>
-                        <span>Images:</span>
-                        <span className="text-right">{message.price.imageCount}</span>
-                        <span>Image Cost:</span>
-                        <span className="text-right">${message.price.imageCost?.toFixed(6)}</span>
-                      </>
-                    ) : null}
-                    <span className="border-t border-gray-600 col-span-2 mt-1 pt-1"></span>
-                    <span className="font-semibold">Total Cost:</span>
-                    <span className="text-right font-semibold">${message.price.totalCost?.toFixed(6)}</span>
+            {(message.role === 'assistant' && (message.agentRunSnapshot || message.price)) && (
+              <div className="ml-auto flex items-center gap-2">
+                {message.agentRunSnapshot && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onAssistantMessageClick?.(message);
+                    }}
+                    className="text-xs sm:text-sm px-2 sm:px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded transition-colors"
+                  >
+                    Show agent&apos;s run
+                  </button>
+                )}
+                {message.price && (
+                  <div className="relative group">
+                    <span className="text-[10px] sm:text-xs text-gray-500 cursor-help">
+                      ${message.price.totalCost?.toFixed(2)} USD
+                    </span>
+                    <div className="absolute right-0 mt-1 w-60 bg-gray-800 text-white text-xs rounded py-2 px-3 z-10 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none">
+                      <div className="font-semibold mb-1">Price Breakdown:</div>
+                      <div className="grid grid-cols-2 gap-1">
+                        <span>Prompt Tokens:</span>
+                        <span className="text-right">{message.price.promptTokens?.toLocaleString()}</span>
+                        <span>Prompt Cost:</span>
+                        <span className="text-right">${message.price.promptCost?.toFixed(6)}</span>
+                        
+                        <span>Output Tokens:</span>
+                        <span className="text-right">{message.price.completionTokens?.toLocaleString()}</span>
+                        <span>Output Cost:</span>
+                        <span className="text-right">${message.price.completionCost?.toFixed(6)}</span>
+                        
+                        {message.price.imageCount ? (
+                          <>
+                            <span>Images:</span>
+                            <span className="text-right">{message.price.imageCount}</span>
+                            <span>Image Cost:</span>
+                            <span className="text-right">${message.price.imageCost?.toFixed(6)}</span>
+                          </>
+                        ) : null}
+                        <span className="border-t border-gray-600 col-span-2 mt-1 pt-1"></span>
+                        <span className="font-semibold">Total Cost:</span>
+                        <span className="text-right font-semibold">${message.price.totalCost?.toFixed(6)}</span>
+                      </div>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             )}
           </div>
@@ -198,6 +259,24 @@ export default function MessageList({ messages, isGenerating, streamingContent, 
               {message.content}
             </ReactMarkdown>
           </div>
+          {message.role === 'system' && typeof message.content === 'string' && message.content.startsWith('[KNOWLEDGE]') && (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {extractKnowledgeKeys(message.content).map((key) => (
+                <button
+                  key={key}
+                  onClick={() => handleTagClick(key)}
+                  className={`inline-flex items-center px-2 py-1 rounded-md text-xs font-medium transition-colors ${
+                    knowledge && onUpdateKnowledge
+                      ? 'bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 hover:bg-purple-200 dark:hover:bg-purple-800 cursor-pointer'
+                      : 'bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200'
+                  }`}
+                  disabled={!knowledge || !onUpdateKnowledge}
+                >
+                  {key}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="border-b border-gray-200 dark:border-gray-700 mt-4"></div>
         </div>
       ))}
@@ -303,6 +382,16 @@ export default function MessageList({ messages, isGenerating, streamingContent, 
           }
         }
       `}</style>
+      
+      {showKnowledgeModal && selectedKnowledgeKey && (
+        <AddKnowledgeConfirmationModal
+          open={showKnowledgeModal}
+          initialKey={selectedKnowledgeKey}
+          initialValue={selectedKnowledgeValue}
+          onCancel={handleKnowledgeCancel}
+          onConfirm={handleKnowledgeConfirm}
+        />
+      )}
     </div>
   );
 } 

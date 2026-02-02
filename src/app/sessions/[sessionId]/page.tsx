@@ -87,6 +87,7 @@ export default function SessionPage() {
     buildKnowledgeSystemMessage,
     confirmLastGeneratedKnowledge,
     lastGeneratedEntry,
+    updateKnowledgeEntry,
   } = useKnowledgeManager(selectedAgent);
 
   // Open sidebar after planning succeeds (i.e. tasks exist). Exclude planning time by not opening until tasks are set.
@@ -340,6 +341,20 @@ export default function SessionPage() {
     }
   };
 
+  const handleUpdateChatTitle = async (newTitle: string) => {
+    if (!currentChat) return;
+    
+    try {
+      const updatedChat = await chatDB.update(currentChat.id, { title: newTitle });
+      if (updatedChat) {
+        setCurrentChat(updatedChat);
+      }
+    } catch (error) {
+      console.error('Failed to update chat title:', error);
+      alert('Failed to update chat title. Please try again.');
+    }
+  };
+
   const handleConfirmKnowledge = useCallback(async (key: string, value: string) => {
     if (!selectedAgent || !lastGeneratedEntry) {
       setShowKnowledgeConfirmation(false);
@@ -362,6 +377,24 @@ export default function SessionPage() {
   const handleCancelKnowledge = useCallback(() => {
     setShowKnowledgeConfirmation(false);
   }, []);
+
+  const handleUpdateKnowledge = useCallback(async (originalKey: string, newKey: string, value: string, originalValues: string[]) => {
+    if (!updateKnowledgeEntry || !selectedAgent) return;
+    
+    try {
+      const saved = await updateKnowledgeEntry(originalKey, newKey, value, originalValues);
+      if (saved) {
+        // Refresh the agent state
+        const updated = await agentDB.get(selectedAgent.id);
+        if (updated) {
+          setSelectedAgent(updated);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to update knowledge:', error);
+      alert('Failed to update knowledge. Please try again.');
+    }
+  }, [updateKnowledgeEntry, selectedAgent]);
   
   const handleAgentUpdate = async (agentData: Omit<ChatAgent, 'id' | 'createdAt' | 'updatedAt'>) => {
     try {
@@ -392,6 +425,7 @@ export default function SessionPage() {
         isTitleGenerating={isTitleGenerating}
         handleEditAgent={handleEditAgent}
         handleClearChat={handleClearChat}
+        handleUpdateChatTitle={handleUpdateChatTitle}
       />
 
       <div className="flex flex-1 overflow-hidden">
@@ -412,6 +446,8 @@ export default function SessionPage() {
                   isGenerating={isGenerating}
                   streamingContent={streamingContent}
                   onAssistantMessageClick={handleAssistantMessageClick}
+                  knowledge={selectedAgent?.knowledge}
+                  onUpdateKnowledge={handleUpdateKnowledge}
                 />
               )}
             </div>

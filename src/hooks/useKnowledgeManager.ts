@@ -168,7 +168,7 @@ export function useKnowledgeManager(agent: ChatAgent | null | undefined) {
       role: 'system',
       id: `${Date.now()}-knowledge`,
       createdAt: new Date().toISOString(),
-      content: 'Used knowledge: ' + selectedKeys.join(', '),
+      content: '[KNOWLEDGE] Used knowledge: ' + selectedKeys.join(', '),
       rawContent: [
         '[KNOWLEDGE]',
         'Relevant stored knowledge (use if helpful):',
@@ -181,6 +181,56 @@ export function useKnowledgeManager(agent: ChatAgent | null | undefined) {
   [getApiKeyForAgentOrRedirect, agent]
   );
 
+  const updateKnowledgeEntry = useCallback(
+    async (originalKey: string, newKey: string, value: string, originalValues: string[]) => {
+      if (!agent) return null;
+
+      const trimmedNewKey = newKey.trim();
+      const trimmedValue = value.trim();
+      if (!trimmedNewKey || !trimmedValue) {
+        return null;
+      }
+
+      const latestAgent = await agentDB.get(agent.id);
+      const baseAgent = latestAgent ?? agent;
+      const existing = baseAgent.knowledge ?? {};
+
+      const updatedKnowledge: Record<string, string[]> = {};
+      for (const [k, v] of Object.entries(existing)) {
+        updatedKnowledge[k] = Array.isArray(v) ? [...v] : [];
+      }
+
+      // If key was renamed, remove the original key
+      if (originalKey !== trimmedNewKey && updatedKnowledge[originalKey]) {
+        delete updatedKnowledge[originalKey];
+      }
+
+      // Update or create the new key with the edited value
+      if (originalKey === trimmedNewKey && originalValues.length > 0) {
+        // Same key, replace the last value
+        const updatedValues = [...originalValues];
+        updatedValues[updatedValues.length - 1] = trimmedValue;
+        updatedKnowledge[trimmedNewKey] = updatedValues;
+      } else if (originalKey === trimmedNewKey) {
+        // Same key, no previous values, create new
+        updatedKnowledge[trimmedNewKey] = [trimmedValue];
+      } else {
+        // Key renamed - move values to new key and update last one
+        if (originalValues.length > 0) {
+          const updatedValues = [...originalValues];
+          updatedValues[updatedValues.length - 1] = trimmedValue;
+          updatedKnowledge[trimmedNewKey] = updatedValues;
+        } else {
+          updatedKnowledge[trimmedNewKey] = [trimmedValue];
+        }
+      }
+
+      const saved = await agentDB.update(baseAgent.id, { knowledge: updatedKnowledge });
+      return saved;
+    },
+    [agent]
+  );
+
   return {
     generateKnowledge,
     buildKnowledgeSystemMessage,
@@ -188,6 +238,7 @@ export function useKnowledgeManager(agent: ChatAgent | null | undefined) {
     error,
     lastGeneratedEntry,
     confirmLastGeneratedKnowledge,
+    updateKnowledgeEntry,
   };
 }
 
@@ -274,11 +325,11 @@ function parseKeyValueEntry2(raw: string): { key: string; value: string } | null
 
 function isKnowledgeSystemApiMessage(m: ApiMessage): boolean {
   if (m.role !== 'system') return false;
-  if (typeof m.content === 'string') return m.content.includes('[KNOWLEDGE]');
+  if (typeof m.content === 'string') return m.content.startsWith('[KNOWLEDGE]');
   // If content is multipart, check text parts
   if (Array.isArray(m.content)) {
     return (m.content as ContentItem[]).some(
-      (c) => c?.type === 'text' && typeof c.text === 'string' && c.text.includes('[KNOWLEDGE]')
+      (c) => c?.type === 'text' && typeof c.text === 'string' && c.text.startsWith('[KNOWLEDGE]')
     );
   }
   return false;
@@ -286,15 +337,12 @@ function isKnowledgeSystemApiMessage(m: ApiMessage): boolean {
 
 function extractKeysFromKnowledgeSystemContent(content: ApiMessage['content']): string[] {
   const text = apiContentToText(content);
-  if (!text.includes('[KNOWLEDGE]')) return [];
+  if (!text.startsWith('[KNOWLEDGE]')) return [];
 
-  const keys: string[] = [];
-  for (const line of text.split('\n')) {
-    const m = line.match(/^\s*-\s*([^:]+)\s*:/);
-    if (!m?.[1]) continue;
-    const key = m[1].trim();
-    if (key) keys.push(key);
-  }
+  // text is like: [KNOWLEDGE] Used knowledge: key1, key2, key3
+  const parts = text.split(':');
+  if (parts.length < 2) return [];
+  const keys = parts[1].split(',').map((k) => k.trim()).filter((k) => k.length > 0);
   return keys;
 }
 
