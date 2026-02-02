@@ -38,7 +38,7 @@ export function useKnowledgeManager(agent: ChatAgent | null | undefined) {
       const response = await generateChatCompletion({
         title: 'Knowledge Generation',
         provider: agent.provider,
-        model: agent.modelName,
+        model: 'openai/gpt-o3-mini',
         apiKey,
         messages: [
           {

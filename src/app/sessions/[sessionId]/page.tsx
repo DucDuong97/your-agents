@@ -148,6 +148,8 @@ export default function SessionPage() {
           router.push('/home');
           return;
         }
+
+        console.log(chat);
         
         // Mark the chat as read if it's unread
         if (chat.unread) {
@@ -216,21 +218,20 @@ export default function SessionPage() {
     }
     
     // Add message to current chat
-    const currentMessages = messages.slice(-10);
-    let updatedMessages = [...currentMessages, userMessage];
+    let updatedMessages: Message[] = [...messages, userMessage];
+    let apiMessages: ApiMessage[] = buildApiMessages(updatedMessages.slice(-10));
     await saveMessages(updatedMessages);
 
     setIsGenerating(true);
     setStreamingContent('');
     
     try {
-      let apiMessages: ApiMessage[] = buildApiMessages(updatedMessages);
       let agentRunSnapshot: AgentRunSnapshot | null = null;
       
       // Optional: inject relevant stored knowledge as a system message
       if (selectedAgent.knowledgeGenerationPrompt && Object.keys(selectedAgent.knowledge ?? {}).length > 0) {
         console.log('Building knowledge system message...');
-        const { knowledgeSystemMessage } = await buildKnowledgeSystemMessage(updatedMessages);
+        const { knowledgeSystemMessage } = await buildKnowledgeSystemMessage(apiMessages);
 
         if (knowledgeSystemMessage) {
           updatedMessages = [...updatedMessages, knowledgeSystemMessage];

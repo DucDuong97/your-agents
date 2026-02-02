@@ -141,8 +141,6 @@ export function useMcp({isTesting = false}: {isTesting?: boolean} = {}) {
           apiMessages : args.apiMessages,
         });
 
-        console.log('resultEvaluation', resultEvaluation);
-
         if (resultEvaluation.solved) {
           break;
         }
