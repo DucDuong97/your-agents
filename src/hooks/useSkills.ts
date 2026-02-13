@@ -52,7 +52,7 @@ export type AgentRunSnapshot = {
   error: string | null;
 };
 
-export function useMcp({isTesting = false}: {isTesting?: boolean} = {}) {
+export function useSkills({isTesting = false}: {isTesting?: boolean} = {}) {
   const [isPlanning, setIsPlanning] = useState(false);
   const [isExecuting, setIsExecuting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -62,11 +62,6 @@ export function useMcp({isTesting = false}: {isTesting?: boolean} = {}) {
   const [resultsByTask, setResultsByTask] = useState<McpResultsByTask[]>([]);
 
   if (isTesting) {}
-
-  // console.log("reasoning", reasoning);
-  // console.log("tasks", tasks);
-  // console.log("toolCallsByTask", toolCallsByTask);
-  // console.log("resultsByTask", resultsByTask);
 
   const reset = useCallback(() => {
     setError(null);

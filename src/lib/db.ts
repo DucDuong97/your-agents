@@ -1,4 +1,4 @@
-import { McpToolCallsByTask, McpResultsByTask } from '@/hooks/useMcp';
+import { McpToolCallsByTask, McpResultsByTask } from '@/hooks/useSkills';
 import { nanoid } from 'nanoid';
 
 // Define types for our data
@@ -42,6 +42,11 @@ export interface Chat {
   unread?: boolean; // Flag to indicate unread chat sessions
 }
 
+export interface SubAgent {
+  id: string;
+  description: string;
+}
+
 export interface ChatAgent {
   id: string;
   name: string;
@@ -61,6 +66,9 @@ export interface ChatAgent {
   /** If enabled, this agent can use the local MCP server (see `mcp/sql.js`). */
   useMysqlMcp?: boolean;
   mysqlMcpEnv?: 'local' | 'dev' | 'hotfix' | 'lab' | 'prod';
+  useImageMcp?: boolean;
+  useBrowserMcp?: boolean;
+  subAgents?: SubAgent[];
   createdAt: string;
   updatedAt: string;
 }

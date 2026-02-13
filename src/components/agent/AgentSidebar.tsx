@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import type { McpPlannedCall, McpResultsByTask, McpToolCallsByTask, McpToolResult, McpToolResultContent } from '@/hooks/useMcp';
+import type { McpPlannedCall, McpResultsByTask, McpToolCallsByTask, McpToolResult, McpToolResultContent } from '@/hooks/useSkills';
 
 type Props = {
   open: boolean;

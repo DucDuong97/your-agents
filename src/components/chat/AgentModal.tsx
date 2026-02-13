@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { ChatAgent } from '@/lib/db';
+import { agentDB, ChatAgent, SubAgent } from '@/lib/db';
 import { getModels } from '@/lib/modelUtils';
 import { generateExamplePrompts, generateExamplePromptsSync } from '@/lib/promptUtils';
 import ModelSelect from './ModelSelect';
@@ -19,6 +19,7 @@ export default function AgentModal({ initialAgent, onSubmit, onClose }: AgentMod
   const [showSystemPromptEditor, setShowSystemPromptEditor] = useState(false);
   const [showKnowledgeEditor, setShowKnowledgeEditor] = useState(false);
   const [oneShotEnabled, setOneShotEnabled] = useState(!!initialAgent?.oneShotExample);
+  const [availableAgents, setAvailableAgents] = useState<ChatAgent[]>([]);
 
   const { register, handleSubmit, setValue, watch } = useForm<Omit<ChatAgent, 'id' | 'createdAt' | 'updatedAt'>>({
     defaultValues: initialAgent ? {
@@ -38,6 +39,9 @@ export default function AgentModal({ initialAgent, onSubmit, onClose }: AgentMod
       },
       useMysqlMcp: initialAgent.useMysqlMcp ?? false,
       mysqlMcpEnv: initialAgent.mysqlMcpEnv ?? 'local',
+      useImageMcp: initialAgent.useImageMcp ?? false,
+      useBrowserMcp: initialAgent.useBrowserMcp ?? false,
+      subAgents: initialAgent.subAgents ?? [],
     } : {
       name: '',
       systemPrompt: 'You are a helpful assistant.',
@@ -55,6 +59,9 @@ export default function AgentModal({ initialAgent, onSubmit, onClose }: AgentMod
       },
       useMysqlMcp: false,
       mysqlMcpEnv: 'local',
+      useImageMcp: false,
+      useBrowserMcp: false,
+      subAgents: [],
     },
   });
 
@@ -63,6 +70,26 @@ export default function AgentModal({ initialAgent, onSubmit, onClose }: AgentMod
   const currentSystemPrompt = watch('systemPrompt');
   const currentKnowledge = watch('knowledge');
   const useMysqlMcp = watch('useMysqlMcp');
+  const subAgents = watch('subAgents') || [];
+  const currentAgentId = initialAgent && 'id' in initialAgent ? initialAgent.id : null;
+
+  useEffect(() => {
+    const loadAgents = async () => {
+      try {
+        const agents = await agentDB.list();
+        setAvailableAgents(agents);
+      } catch (error) {
+        console.error('Failed to load agents for sub-agent selection:', error);
+      }
+    };
+
+    loadAgents();
+  }, []);
+
+  const selectableSubAgents = useMemo(
+    () => availableAgents.filter((agent) => agent.id !== currentAgentId),
+    [availableAgents, currentAgentId]
+  );
   
   // Get models for the current provider
   const models = getModels(currentProvider);
@@ -112,9 +139,18 @@ export default function AgentModal({ initialAgent, onSubmit, onClose }: AgentMod
       }
       
       // Submit the agent data with generated example prompts
+      const validSubAgents = (data.subAgents ?? [])
+        .filter((subAgent) => subAgent.id.trim())
+        .map((subAgent) => ({
+          ...subAgent,
+          id: subAgent.id.trim(),
+          description: subAgent.description.trim(),
+        }));
+
       onSubmit({
         ...data,
         examplePrompts,
+        subAgents: validSubAgents,
       });
     } catch (error) {
       console.error('Error in form submission:', error);
@@ -176,6 +212,46 @@ export default function AgentModal({ initialAgent, onSubmit, onClose }: AgentMod
       enabled,
       time: currentSettings.time || '07:00'
     });
+  };
+
+  const handleAddSubAgent = () => {
+    const firstOption = selectableSubAgents[0];
+    if (!firstOption) return;
+
+    const newSubAgent: SubAgent = {
+      id: firstOption.id,
+      description: `Ask ${firstOption.name} for help when needed.`,
+    };
+    setValue('subAgents', [...subAgents, newSubAgent]);
+  };
+
+  const handleSubAgentChange = (index: number, updates: Partial<SubAgent>) => {
+    const nextSubAgents = [...subAgents];
+    const currentSubAgent = nextSubAgents[index];
+    if (!currentSubAgent) return;
+
+    nextSubAgents[index] = {
+      ...currentSubAgent,
+      ...updates,
+    };
+    setValue('subAgents', nextSubAgents);
+  };
+
+  const handleSubAgentTargetChange = (index: number, agentId: string) => {
+    const selectedAgent = selectableSubAgents.find((agent) => agent.id === agentId);
+    handleSubAgentChange(index, {
+      id: agentId,
+      description:
+        subAgents[index]?.description ||
+        (selectedAgent ? `Ask ${selectedAgent.name} for help when needed.` : ''),
+    });
+  };
+
+  const handleRemoveSubAgent = (index: number) => {
+    setValue(
+      'subAgents',
+      subAgents.filter((_, subAgentIndex) => subAgentIndex !== index)
+    );
   };
 
   return (
@@ -332,8 +408,48 @@ export default function AgentModal({ initialAgent, onSubmit, onClose }: AgentMod
                 Enables access to the MySQL MCP server tools (query/tables/describe) for this agent.
               </p>
             </div>
-            
+
             <div className="mb-6">
+              <div className="flex items-center">
+                <input
+                  type="checkbox"
+                  id="useImageMcpToggle"
+                  {...register('useImageMcp')}
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                />
+                <label
+                  htmlFor="useImageMcpToggle"
+                  className="ml-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                >
+                  Allow this agent to use Image MCP
+                </label>
+              </div>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Enables access to image MCP tools for this agent.
+              </p>
+            </div>
+
+            <div className="mb-6">
+              <div className="flex items-center">
+                <input
+                  type="checkbox"
+                  id="useBrowserMcpToggle"
+                  {...register('useBrowserMcp')}
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                />
+                <label
+                  htmlFor="useBrowserMcpToggle"
+                  className="ml-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                >
+                  Allow this agent to use Browser MCP
+                </label>
+              </div>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Enables access to browser MCP tools for this agent.
+              </p>
+            </div>
+            
+            <div className="mb-6 hidden">
               <div className="flex items-center mb-2">
                 <input
                   type="checkbox"
@@ -382,6 +498,83 @@ export default function AgentModal({ initialAgent, onSubmit, onClose }: AgentMod
               )}
             </div>
             
+            <div className="mb-6">
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Sub-agents
+                </label>
+                <button
+                  type="button"
+                  onClick={handleAddSubAgent}
+                  disabled={selectableSubAgents.length === 0}
+                  className="text-sm text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
+                >
+                  Add Sub-agent
+                </button>
+              </div>
+              {selectableSubAgents.length === 0 ? (
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  No other agents available. Create another agent first to add it here.
+                </p>
+              ) : subAgents.length === 0 ? (
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  No sub-agents configured. Add one to let this agent delegate to another saved agent.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {subAgents.map((subAgent, index) => (
+                    <div
+                      key={`${subAgent.id}-${index}`}
+                      className="p-3 border border-gray-200 dark:border-gray-700 rounded-md bg-gray-50 dark:bg-gray-800"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-1/2">
+                          <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            Agent
+                          </label>
+                          <select
+                            value={subAgent.id}
+                            onChange={(e) => handleSubAgentTargetChange(index, e.target.value)}
+                            className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white text-sm"
+                          >
+                            {!selectableSubAgents.some((agent) => agent.id === subAgent.id) && (
+                              <option value={subAgent.id}>Unknown agent ({subAgent.id})</option>
+                            )}
+                            {selectableSubAgents.map((agent) => (
+                              <option key={agent.id} value={agent.id}>
+                                {agent.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveSubAgent(index)}
+                          className="mt-5 px-2 py-1 text-xs text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                      <div className="mt-3">
+                        <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                          Description
+                        </label>
+                        <textarea
+                          value={subAgent.description}
+                          onChange={(e) =>
+                            handleSubAgentChange(index, { description: e.target.value })
+                          }
+                          className="w-full p-2 text-sm border border-gray-300 dark:border-gray-600 rounded-md focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+                          rows={2}
+                          placeholder="Describe when this sub-agent should be used."
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <div className="mb-6">
               <div className="space-y-4">
                 <div className="flex items-center">

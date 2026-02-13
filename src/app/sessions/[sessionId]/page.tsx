@@ -13,7 +13,7 @@ import AgentModal from '@/components/chat/AgentModal';
 import { convertImageToBase64, supportsImages } from '@/lib/imageUtils';
 import { useApiKey } from '@/hooks/useApiKey';
 import { calculateChatCompletionPrice } from '@/lib/costUtils';
-import { AgentRunSnapshot, useMcp } from '@/hooks/useMcp';
+import { AgentRunSnapshot, useSkills } from '@/hooks/useSkills';
 import AgentSidebar from '@/components/agent/AgentSidebar';
 import Header from '@/components/chat/Header';
 import { useTitleGenerator } from '@/hooks/useTitleGenerator';
@@ -74,7 +74,7 @@ export default function SessionPage() {
   // Throttle message sending: require at least 5s between submissions
   const lastSendRef = useRef<number | null>(null);
 
-  const mysqlMcp = useMcp({isTesting: false});
+  const skillsManager = useSkills({isTesting: false});
   const [isAgentSidebarOpen, setIsAgentSidebarOpen] = useState(false);
   const [selectedRun, setSelectedAgentRun] = useState<{
     messageId: string;
@@ -92,18 +92,18 @@ export default function SessionPage() {
 
   // Open sidebar after planning succeeds (i.e. tasks exist). Exclude planning time by not opening until tasks are set.
   useEffect(() => {
-    if (selectedAgent?.useMysqlMcp && mysqlMcp.tasks.length > 0) {
+    if (selectedAgent?.useMysqlMcp && skillsManager.tasks.length > 0) {
       setIsAgentSidebarOpen(true);
     }
-  }, [selectedAgent?.useMysqlMcp, mysqlMcp.tasks.length]);
+  }, [selectedAgent?.useMysqlMcp, skillsManager.tasks.length]);
 
   // Prevent reopening older runs while executing; keep sidebar locked to the live run.
   useEffect(() => {
-    if (mysqlMcp.isExecuting) {
+    if (skillsManager.isExecuting) {
       setSelectedAgentRun(null);
       setIsAgentSidebarOpen(true);
     }
-  }, [mysqlMcp.isExecuting]);
+  }, [skillsManager.isExecuting]);
 
   useEffect(() => {
     if (!selectedAgent || !lastGeneratedEntry) return;
@@ -111,12 +111,12 @@ export default function SessionPage() {
   }, [selectedAgent, lastGeneratedEntry]);
 
   const handleAssistantMessageClick = useCallback((message: Message) => {
-    if (mysqlMcp.isExecuting) return; // don't reopen historical runs during execution
+    if (skillsManager.isExecuting) return; // don't reopen historical runs during execution
     const run = message.agentRunSnapshot as AgentRunSnapshot | undefined;
     if (!run || run.version !== 1) return;
     setSelectedAgentRun({ messageId: message.id, run });
     setIsAgentSidebarOpen(true);
-  }, [mysqlMcp.isExecuting]);
+  }, [skillsManager.isExecuting]);
 
   // Check if API key is available for the selected provider
   const { getApiKeyForAgentOrRedirect } = useApiKey();
@@ -148,8 +148,6 @@ export default function SessionPage() {
           router.push('/home');
           return;
         }
-
-        console.log(chat);
         
         // Mark the chat as read if it's unread
         if (chat.unread) {
@@ -245,23 +243,20 @@ export default function SessionPage() {
       }
 
       // Optional: orchestrate MySQL MCP tool calls and inject results as a synthetic system message
-      if (selectedAgent.useMysqlMcp) {
-        console.log('Running MySQL MCP...');
-        const { toolSystemMessage, runSnapshot } = await mysqlMcp.run({
-          apiMessages, agent: selectedAgent, apiKey: apiKey!,
-        });
-        agentRunSnapshot = runSnapshot;
+      console.log('Running Skills...');
+      const { toolSystemMessage, runSnapshot } = await skillsManager.run({
+        apiMessages, agent: selectedAgent, apiKey: apiKey!,
+      });
+      agentRunSnapshot = runSnapshot;
 
-        if (toolSystemMessage) {
-          updatedMessages = [...updatedMessages, toolSystemMessage];
-          const apiMessage = toApiMessage(toolSystemMessage);
-          if (apiMessage) {
-            apiMessages = [...apiMessages, apiMessage];
-          }
-
-          await saveMessages(updatedMessages);
-
+      if (toolSystemMessage) {
+        updatedMessages = [...updatedMessages, toolSystemMessage];
+        const apiMessage = toApiMessage(toolSystemMessage);
+        if (apiMessage) {
+          apiMessages = [...apiMessages, apiMessage];
         }
+
+        await saveMessages(updatedMessages);
       }
       
       console.log('Generating response...');
@@ -319,6 +314,82 @@ export default function SessionPage() {
       setStreamingContent(null);
     }
   };
+
+  const messageSubAgent = async (data: { message: string; agent: ChatAgent }) => {
+    if (!data.message.trim() || !apiKey) return null;
+
+    let userMessage: Message;
+    try {
+      userMessage = await buildUserMessage({ message: data.message });
+    } catch (error) {
+      console.error('Error building user message for sub-agent:', error);
+      throw error;
+    }
+
+    const outputMessages: Message[] = [userMessage];
+    let apiMessages: ApiMessage[] = buildApiMessages(outputMessages.slice(-10));
+    let agentRunSnapshot: AgentRunSnapshot | null = null;
+
+    if (data.agent.knowledgeGenerationPrompt && Object.keys(data.agent.knowledge ?? {}).length > 0) {
+      const { knowledgeSystemMessage } = await buildKnowledgeSystemMessage(apiMessages);
+
+      if (knowledgeSystemMessage) {
+        outputMessages.push(knowledgeSystemMessage);
+        const apiMessage = toApiMessage(knowledgeSystemMessage);
+        if (apiMessage) {
+          apiMessages = [...apiMessages, apiMessage];
+        }
+      }
+    }
+
+    if (data.agent.useMysqlMcp) {
+      const { toolSystemMessage, runSnapshot } = await skillsManager.run({
+        apiMessages,
+        agent: data.agent,
+        apiKey,
+      });
+      agentRunSnapshot = runSnapshot;
+
+      if (toolSystemMessage) {
+        outputMessages.push(toolSystemMessage);
+        const apiMessage = toApiMessage(toolSystemMessage);
+        if (apiMessage) {
+          apiMessages = [...apiMessages, apiMessage];
+        }
+      }
+    }
+
+    const response = await generateChatCompletion({
+      title: 'Assistant Response',
+      messages: apiMessages,
+      model: data.agent.modelName,
+      apiKey,
+      provider: data.agent.provider,
+      isStreaming: false,
+      maxTokens: 2000,
+    });
+
+    const assistantMessage: Message = {
+      role: 'assistant',
+      id: Date.now().toString(),
+      createdAt: new Date().toISOString(),
+      content: response.content,
+      agentRunSnapshot: agentRunSnapshot ?? undefined,
+      price: calculateChatCompletionPrice({
+        apiMessages,
+        response,
+        modelId: data.agent.modelName,
+      }),
+    };
+
+    return {
+      outputMessages: [...outputMessages, assistantMessage],
+      assistantMessage,
+      response,
+      agentRunSnapshot,
+    };
+  };
+  void messageSubAgent;
   
   const handleClearChat = () => {
     if (!currentChat) return;
@@ -468,17 +539,17 @@ export default function SessionPage() {
         </div>
 
         {/* Right sidebar (desktop) + drawer (mobile) */}
-        {selectedAgent?.useMysqlMcp && (mysqlMcp.reasoning.length > 0 || selectedRun) && (
+        {selectedAgent?.useMysqlMcp && (skillsManager.reasoning.length > 0 || selectedRun) && (
           <div className="hidden md:block">
             <AgentSidebar
               open={isAgentSidebarOpen}
               onClose={() => setIsAgentSidebarOpen(false)}
-              isExecuting={mysqlMcp.isExecuting}
-              error={selectedRun ? selectedRun.run.error : mysqlMcp.error}
-              reasoning={selectedRun ? selectedRun.run.reasoning : mysqlMcp.reasoning}
-              tasks={selectedRun ? selectedRun.run.tasks : mysqlMcp.tasks}
-              toolCallsByTask={selectedRun ? selectedRun.run.toolCallsByTask : mysqlMcp.toolCallsByTask}
-              resultsByTask={selectedRun ? selectedRun.run.resultsByTask : mysqlMcp.resultsByTask}
+              isExecuting={skillsManager.isExecuting}
+              error={selectedRun ? selectedRun.run.error : skillsManager.error}
+              reasoning={selectedRun ? selectedRun.run.reasoning : skillsManager.reasoning}
+              tasks={selectedRun ? selectedRun.run.tasks : skillsManager.tasks}
+              toolCallsByTask={selectedRun ? selectedRun.run.toolCallsByTask : skillsManager.toolCallsByTask}
+              resultsByTask={selectedRun ? selectedRun.run.resultsByTask : skillsManager.resultsByTask}
             />
           </div>
         )}
