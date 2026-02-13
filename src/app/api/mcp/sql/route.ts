@@ -470,11 +470,6 @@ export async function GET(request: NextRequest) {
           },
         },
         {
-          name: 'mysql_list_tables',
-          description: 'List all tables in the currently configured MySQL database/schema.',
-          inputSchema: { type: 'object', additionalProperties: false, properties: {} },
-        },
-        {
           name: 'mysql_describe_table',
           description:
             'Describe a table (columns, types, nullability, defaults, keys) in the currently configured MySQL database/schema.',
@@ -485,6 +480,11 @@ export async function GET(request: NextRequest) {
             required: ['table'],
           },
         },
+        // {
+        //   name: 'mysql_list_tables',
+        //   description: 'List all tables in the currently configured MySQL database/schema.',
+        //   inputSchema: { type: 'object', additionalProperties: false, properties: {} },
+        // },
       ],
     });
   }
