@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 export type KnowledgeMap = Record<string, string[]>;
 
@@ -34,12 +34,27 @@ export default function KnowledgeEditor({ open, knowledge, onClose, onSave }: Kn
 
   const [editedKnowledge, setEditedKnowledge] = useState<KnowledgeMap>(normalizedKnowledge);
   const [error, setError] = useState<string | null>(null);
+  const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [editingKeyValue, setEditingKeyValue] = useState('');
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const prevOpenRef = useRef(false);
+
+  const sortedKeys = useMemo(
+    () => Object.keys(editedKnowledge).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' })),
+    [editedKnowledge]
+  );
 
   useEffect(() => {
+    const isOpening = open && !prevOpenRef.current;
+    prevOpenRef.current = open;
     if (!open) return;
-    const normalized = normalizeKnowledgeMap(knowledge) ?? {};
-    setEditedKnowledge(normalized);
-    setError(null);
+    if (isOpening) {
+      const normalized = normalizeKnowledgeMap(knowledge) ?? {};
+      setEditedKnowledge(normalized);
+      setError(null);
+      setEditingKey(null);
+      setSelectedKey(null);
+    }
   }, [open, knowledge]);
 
   if (!open) return null;
@@ -78,6 +93,7 @@ export default function KnowledgeEditor({ open, knowledge, onClose, onSave }: Kn
     setEditedKnowledge((prev) => {
       return Object.fromEntries(Object.entries(prev).filter(([k]) => k !== key));
     });
+    if (selectedKey === key) setSelectedKey(null);
     setError(null);
   };
 
@@ -86,6 +102,7 @@ export default function KnowledgeEditor({ open, knowledge, onClose, onSave }: Kn
     setEditedKnowledge((prev) => {
       return { ...prev, [newKey]: [''] };
     });
+    setSelectedKey(newKey);
     setError(null);
   };
 
@@ -101,23 +118,24 @@ export default function KnowledgeEditor({ open, knowledge, onClose, onSave }: Kn
     setError(null);
   };
 
-  const handleKeyChange = (oldKey: string, newKey: string) => {
+  const handleKeyBlur = (oldKey: string, newKey: string) => {
     const trimmedKey = newKey.trim();
+    setEditingKey(null);
     if (!trimmedKey || trimmedKey === oldKey) return;
-    
-    // Check if key already exists
+
     if (editedKnowledge[trimmedKey]) {
       setError(`Key "${trimmedKey}" already exists.`);
       return;
     }
 
     setEditedKnowledge((prev) => {
-      const updated = { ...prev };
-      const values = updated[oldKey] || [];
-      delete updated[oldKey];
-      updated[trimmedKey] = values;
-      return updated;
+      const entries = Object.entries(prev);
+      const newEntries = entries.map(([k, v]) =>
+        k === oldKey ? [trimmedKey, v] : [k, v]
+      );
+      return Object.fromEntries(newEntries);
     });
+    if (selectedKey === oldKey) setSelectedKey(trimmedKey);
     setError(null);
   };
 
@@ -130,8 +148,6 @@ export default function KnowledgeEditor({ open, knowledge, onClose, onSave }: Kn
     onSave(normalized);
     onClose();
   };
-
-  const entries = Object.entries(editedKnowledge);
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -150,87 +166,132 @@ export default function KnowledgeEditor({ open, knowledge, onClose, onSave }: Kn
           </button>
         </div>
 
-        <div className="p-4 space-y-4 overflow-y-auto flex-1">
+        <div className="p-4 space-y-4 overflow-y-auto flex-1 flex flex-col min-h-0">
           {error && (
-            <div className="p-3 bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200 rounded">
+            <div className="p-3 bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200 rounded flex-shrink-0">
               {error}
             </div>
           )}
 
-          <div className="space-y-6">
-            {entries.length === 0 && (
-              <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-                <p>No knowledge entries to edit.</p>
-              </div>
-            )}
-            {entries.map(([key, values]) => (
-              <div key={key} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <input
-                    type="text"
-                    value={key}
-                    onChange={(e) => handleKeyChange(key, e.target.value)}
-                    className="flex-1 px-3 py-1 border border-blue-400 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Enter key name"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveField(key)}
-                    className="ml-2 text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 p-1 rounded hover:bg-red-50 dark:hover:bg-red-900/20"
-                    aria-label={`Remove field ${key}`}
-                    title="Remove field"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
-                  </button>
-                </div>
-                <div className="space-y-2">
-                  {values.map((value, index) => (
-                    <div key={index} className="flex items-start">
-                      <textarea
-                        rows={3}
-                        value={value}
-                        onChange={(e) => handleValueChange(key, index, e.target.value)}
-                        className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-y"
-                        placeholder={`Enter value ${index + 1}`}
-                      />
+          <div className="flex gap-4 flex-1 min-h-0">
+            {/* Key list (sorted ascending) */}
+            <div className="flex-shrink-0 w-48 flex flex-col">
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Keys</span>
+              <ul className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-y-auto flex-1 min-h-0 bg-gray-50 dark:bg-gray-900/50">
+                {sortedKeys.length === 0 ? (
+                  <li className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">No keys</li>
+                ) : (
+                  sortedKeys.map((key) => (
+                    <li key={key}>
                       <button
                         type="button"
-                        onClick={() => handleRemoveItem(key, index)}
-                        className="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 p-2 rounded hover:bg-red-50 dark:hover:bg-red-900/20 mt-1"
-                        aria-label={`Remove item ${index + 1}`}
-                        title="Remove item"
+                        onClick={() => setSelectedKey(key)}
+                        className={`w-full text-left px-3 py-2 text-sm truncate border-b border-gray-200 dark:border-gray-700 last:border-b-0 ${
+                          selectedKey === key
+                            ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 font-medium'
+                            : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/50'
+                        }`}
                       >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
+                        {key}
                       </button>
-                    </div>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() => handleAddItem(key)}
-                    className="fit-content mx-auto mt-5 px-3 py-2 text-sm font-medium text-blue-600 dark:text-blue-400 flex items-center justify-center gap-2"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                    </svg>
-                    Add Item
-                  </button>
+                    </li>
+                  ))
+                )}
+              </ul>
+              <button
+                type="button"
+                onClick={handleAddField}
+                className="mt-2 w-full px-3 py-2 text-sm font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-md border border-dashed border-blue-300 dark:border-blue-700 flex items-center justify-center gap-2"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Add key
+              </button>
+            </div>
+
+            {/* Edit view for selected key */}
+            <div className="flex-1 min-w-0 flex flex-col">
+              {!selectedKey ? (
+                <div className="flex-1 flex items-center justify-center text-gray-500 dark:text-gray-400 text-sm border border-gray-200 dark:border-gray-700 rounded-lg">
+                  {sortedKeys.length === 0 ? 'Add a key to get started.' : 'Click a key to edit.'}
                 </div>
-              </div>
-            ))}
-            <button
-              type="button"
-              onClick={handleAddField}
-              className="w-full px-4 py-3 text-sm font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-md border-2 border-dashed border-blue-300 dark:border-blue-700 flex items-center justify-center gap-2"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              Add New Field
-            </button>
+              ) : (
+                (() => {
+                  const key = selectedKey;
+                  const values = editedKnowledge[key] ?? [];
+                  return (
+                    <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 flex flex-col min-h-0">
+                      <div className="flex items-center justify-between mb-3 flex-shrink-0">
+                        <input
+                          type="text"
+                          value={editingKey === key ? editingKeyValue : key}
+                          onChange={(e) => {
+                            setEditingKey(key);
+                            setEditingKeyValue(e.target.value);
+                          }}
+                          onFocus={() => {
+                            setEditingKey(key);
+                            setEditingKeyValue(key);
+                          }}
+                          onBlur={() => handleKeyBlur(key, editingKey === key ? editingKeyValue : key)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                          }}
+                          className="flex-1 px-3 py-1 border border-blue-400 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          placeholder="Enter key name"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveField(key)}
+                          className="ml-2 text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 p-1 rounded hover:bg-red-50 dark:hover:bg-red-900/20"
+                          aria-label={`Remove field ${key}`}
+                          title="Remove field"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      </div>
+                      <div className="space-y-2 overflow-y-auto flex-1 min-h-0">
+                        {values.map((value, index) => (
+                          <div key={index} className="flex items-start flex-shrink-0">
+                            <textarea
+                              rows={3}
+                              value={value}
+                              onChange={(e) => handleValueChange(key, index, e.target.value)}
+                              className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-y min-w-0"
+                              placeholder={`Enter value ${index + 1}`}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveItem(key, index)}
+                              className="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 p-2 rounded hover:bg-red-50 dark:hover:bg-red-900/20 mt-1 flex-shrink-0"
+                              aria-label={`Remove item ${index + 1}`}
+                              title="Remove item"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                          </div>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => handleAddItem(key)}
+                          className="w-full px-3 py-2 text-sm font-medium text-blue-600 dark:text-blue-400 border border-dashed border-blue-300 dark:border-blue-700 rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 flex items-center justify-center gap-2 flex-shrink-0"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                          </svg>
+                          Add Item
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })()
+              )}
+            </div>
           </div>
         </div>
 

@@ -40,6 +40,7 @@ export default function AgentModal({ initialAgent, onSubmit, onClose }: AgentMod
       useMysqlMcp: initialAgent.useMysqlMcp ?? false,
       mysqlMcpEnv: initialAgent.mysqlMcpEnv ?? 'local',
       useImageMcp: initialAgent.useImageMcp ?? false,
+      useLmsMcp: initialAgent.useLmsMcp ?? false,
       useBrowserMcp: initialAgent.useBrowserMcp ?? false,
       subAgents: initialAgent.subAgents ?? [],
     } : {
@@ -60,6 +61,7 @@ export default function AgentModal({ initialAgent, onSubmit, onClose }: AgentMod
       useMysqlMcp: false,
       mysqlMcpEnv: 'local',
       useImageMcp: false,
+      useLmsMcp: false,
       useBrowserMcp: false,
       subAgents: [],
     },
@@ -426,6 +428,26 @@ export default function AgentModal({ initialAgent, onSubmit, onClose }: AgentMod
               </div>
               <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                 Enables access to image MCP tools for this agent.
+              </p>
+            </div>
+
+            <div className="mb-6">
+              <div className="flex items-center">
+                <input
+                  type="checkbox"
+                  id="useLmsMcpToggle"
+                  {...register('useLmsMcp')}
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                />
+                <label
+                  htmlFor="useLmsMcpToggle"
+                  className="ml-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                >
+                  Allow this agent to use LMS MCP
+                </label>
+              </div>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Enables access to LMS MCP tools (Canvas, Brightspace, Blackboard) for this agent.
               </p>
             </div>
 

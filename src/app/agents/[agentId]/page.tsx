@@ -67,6 +67,7 @@ export default function AgentPage() {
           oneShotExample: updatedAgent.oneShotExample,
           scheduledNotifications: updatedAgent.scheduledNotifications,
           useMysqlMcp: updatedAgent.useMysqlMcp ?? false,
+          useLmsMcp: updatedAgent.useLmsMcp ?? false,
         });
         
         // Update both the selectedAgent state and the agentName

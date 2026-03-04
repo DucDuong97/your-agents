@@ -1,35 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import mysql from 'mysql2/promise';
+import { err, ok } from '@/lib/server/mcp-response';
+import { getPool, intFromEnv } from '@/lib/server/db';
 
-/**
- * HTTP “tool server” equivalent of `mcp/sql.js`, but as a Next.js API route (no MCP protocol).
- *
- * Endpoints:
- * - GET  /api/mcp/mysql?tool=list
- * - POST /api/mcp/mysql  { name: 'mysql_query'|'mysql_list_tables'|'mysql_describe_table', arguments: {...} }
- *
- * Env:
- * - MYSQL_HOST, MYSQL_PORT, MYSQL_USER, MYSQL_PASSWORD, MYSQL_DATABASE
- * - MCP_MAX_ROWS (default 20) applied to SELECT/WITH ... SELECT without LIMIT
- */
-
-function requiredEnv(name: string, env?: string): string {
-  const envPrefix = env ? `${env.toUpperCase()}_` : '';
-  const envName = `${envPrefix}${name}`;
-  const v = process.env[envName];
-  if (!v) throw new Error(`Missing required environment variable: ${envName}`);
-  return v;
-}
-
-function intFromEnv(name: string, fallback: number, env?: string): number {
-  const envPrefix = env ? `${env.toUpperCase()}_` : '';
-  const envName = `${envPrefix}${name}`;
-  const raw = process.env[envName];
-  if (!raw) return fallback;
-  const n = Number.parseInt(raw, 10);
-  if (!Number.isFinite(n)) return fallback;
-  return n;
-}
 
 // Default sensitive fields to mask
 const SENSITIVE_FIELDS = ['access_token', 'email', 'secret'];
@@ -345,38 +317,6 @@ function ensureLimit(sql: string, maxRows: number): string {
   const base = sql.trim().replace(/;+\s*$/u, '');
   const limited = `${base}\nLIMIT ${maxRows}`;
   return hasSemi ? `${limited};` : limited;
-}
-
-const pools: Map<string, mysql.Pool> = new Map();
-
-function getPool(env?: string): mysql.Pool {
-  const envKey = env || 'local';
-  if (!pools.has(envKey)) {
-    pools.set(envKey, mysql.createPool({
-      host: requiredEnv('MYSQL_HOST', env),
-      port: intFromEnv('MYSQL_PORT', 3306, env),
-      user: requiredEnv('MYSQL_USER', env),
-      password: requiredEnv('MYSQL_PASSWORD', env),
-      database: requiredEnv('MYSQL_DATABASE', env),
-      waitForConnections: true,
-      connectionLimit: 10,
-      queueLimit: 0,
-    }));
-  }
-  return pools.get(envKey)!;
-}
-
-type ToolTextResult = { type: 'text'; text: string };
-type ToolResponse = { content: ToolTextResult[]; isError?: boolean };
-
-function ok(text: string): NextResponse {
-  const body: ToolResponse = { content: [{ type: 'text', text }] };
-  return NextResponse.json(body);
-}
-
-function err(text: string, status = 400): NextResponse {
-  const body: ToolResponse = { content: [{ type: 'text', text }], isError: true };
-  return NextResponse.json(body, { status });
 }
 
 async function handleListTables(env?: string): Promise<NextResponse> {

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { err, ok } from '@/lib/server/mcp-response';
 
 /**
  * Generic MCP-style route template (HTTP tool server pattern).
@@ -15,9 +16,6 @@ import { NextRequest, NextResponse } from 'next/server';
  * - POST /api/mcp/sample { "name": "<tool_name>", "arguments": { ... } }
  */
 
-type ToolTextResult = { type: 'text'; text: string };
-type ToolResponse = { content: ToolTextResult[]; isError?: boolean };
-
 type ToolSchema = {
   type: 'object';
   additionalProperties: false;
@@ -33,16 +31,6 @@ type ToolDefinition = {
 
 type ToolArgs = Record<string, unknown>;
 type ToolHandler = (args: ToolArgs, request: NextRequest) => Promise<NextResponse>;
-
-function ok(text: string): NextResponse {
-  const body: ToolResponse = { content: [{ type: 'text', text }] };
-  return NextResponse.json(body);
-}
-
-function err(text: string, status = 400): NextResponse {
-  const body: ToolResponse = { content: [{ type: 'text', text }], isError: true };
-  return NextResponse.json(body, { status });
-}
 
 const TOOL_REGISTRY: ToolDefinition[] = [
   {

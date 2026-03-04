@@ -67,6 +67,7 @@ export interface ChatAgent {
   useMysqlMcp?: boolean;
   mysqlMcpEnv?: 'local' | 'dev' | 'hotfix' | 'lab' | 'prod';
   useImageMcp?: boolean;
+  useLmsMcp?: boolean;
   useBrowserMcp?: boolean;
   subAgents?: SubAgent[];
   createdAt: string;

@@ -91,11 +91,16 @@ export default function SessionPage() {
   } = useKnowledgeManager(selectedAgent);
 
   // Open sidebar after planning succeeds (i.e. tasks exist). Exclude planning time by not opening until tasks are set.
+  const hasAnyMcpEnabled =
+    React.useMemo(() => selectedAgent?.useMysqlMcp ||
+      selectedAgent?.useLmsMcp ||
+      selectedAgent?.useImageMcp ||
+      selectedAgent?.useBrowserMcp, [selectedAgent]);
   useEffect(() => {
-    if (selectedAgent?.useMysqlMcp && skillsManager.tasks.length > 0) {
+    if (hasAnyMcpEnabled && skillsManager.tasks.length > 0) {
       setIsAgentSidebarOpen(true);
     }
-  }, [selectedAgent?.useMysqlMcp, skillsManager.tasks.length]);
+  }, [hasAnyMcpEnabled, skillsManager.tasks.length]);
 
   // Prevent reopening older runs while executing; keep sidebar locked to the live run.
   useEffect(() => {
@@ -342,7 +347,7 @@ export default function SessionPage() {
       }
     }
 
-    if (data.agent.useMysqlMcp) {
+    if (hasAnyMcpEnabled) {
       const { toolSystemMessage, runSnapshot } = await skillsManager.run({
         apiMessages,
         agent: data.agent,
@@ -539,7 +544,7 @@ export default function SessionPage() {
         </div>
 
         {/* Right sidebar (desktop) + drawer (mobile) */}
-        {selectedAgent?.useMysqlMcp && (skillsManager.reasoning.length > 0 || selectedRun) && (
+        {hasAnyMcpEnabled && (skillsManager.reasoning.length > 0 || selectedRun) && (
           <div className="hidden md:block">
             <AgentSidebar
               open={isAgentSidebarOpen}

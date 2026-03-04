@@ -90,6 +90,7 @@ export default function AgentSelector({ onSelectAgent }: AgentSelectorProps) {
       examplePrompts: agent.examplePrompts,
       oneShotExample: agent.oneShotExample || '',
       useMysqlMcp: agent.useMysqlMcp ?? false,
+      useLmsMcp: agent.useLmsMcp ?? false,
     };
     
     // Convert to JSON string with pretty formatting

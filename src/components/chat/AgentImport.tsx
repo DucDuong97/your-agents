@@ -60,6 +60,7 @@ export default function AgentImport({ onClose, onImportSuccess }: AgentImportPro
             examplePrompts,
             oneShotExample: agentData.oneShotExample || '',
             useMysqlMcp: Boolean(agentData.useMysqlMcp),
+            useLmsMcp: Boolean(agentData.useLmsMcp),
           });
           
           importedCount++;

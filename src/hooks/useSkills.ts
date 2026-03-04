@@ -5,10 +5,8 @@ import type { ApiMessage } from '@/lib/openrouter';
 import { generateChatCompletion } from '@/lib/openrouter';
 import type { ChatAgent, Message } from '@/lib/db';
 
-export type McpToolName = 'mysql_query' | 'mysql_list_tables' | 'mysql_describe_table';
-
 export type McpPlannedCall = {
-  name: McpToolName;
+  name: string;
   arguments: Record<string, unknown>;
 };
 
@@ -22,7 +20,7 @@ export type McpToolResultContent = {
 };
 
 export type McpToolResult = {
-  name: McpToolName;
+  name: string;
   arguments: Record<string, unknown>;
   ok: boolean;
   result?: {
@@ -84,7 +82,7 @@ export function useSkills({isTesting = false}: {isTesting?: boolean} = {}) {
 
     // IMPORTANT: fetch the exact MCP tool schemas once and inject them into the tool-call generator context,
     // so the model doesn't hallucinate argument shapes.
-    const toolSchemas = await fetchMcpToolSchemas();
+    const toolSchemas = await fetchMcpToolSchemas(args.agent);
 
     const localResultsByTask: McpResultsByTask[] = [];
     const plan = await planMcpTasks({
@@ -120,9 +118,9 @@ export function useSkills({isTesting = false}: {isTesting?: boolean} = {}) {
 
           setToolCallsByTask((prev) => [...prev, { task, calls: plannedCalls }]);
 
-          const results = await runToolCallsDirect({ 
+          const results = await runToolCallsDirect({
             calls: plannedCalls,
-            env: args.agent.mysqlMcpEnv || 'local'
+            toolSchemas,
           });
           const entry: McpResultsByTask = { task, calls: plannedCalls, results };
           localResultsByTask.push(entry);
@@ -199,7 +197,7 @@ async function planMcpTasks(args: {
   apiMessages: ApiMessage[];
   agent: ChatAgent;
   apiKey: string;
-  toolSchemas: McpMcpToolSchema[] | null;
+  toolSchemas: ToolSchema[] | null;
 }): Promise<McpPlan> {
   const { apiMessages, agent, apiKey, toolSchemas } = args;
 
@@ -242,7 +240,7 @@ async function planMcpToolCallsForTask(args: {
   agent: ChatAgent;
   apiKey: string;
   priorResults: Array<{ task: string; results: McpToolResult[] }>;
-  toolSchemas: McpMcpToolSchema[] | null;
+  toolSchemas: ToolSchema[] | null;
 }): Promise<McpPlannedCall[]> {
   const { task, apiMessages, agent, apiKey, priorResults, toolSchemas } = args;
 
@@ -282,7 +280,8 @@ async function planMcpToolCallsForTask(args: {
   });
 
   const parsed = safeJsonParse(resp.content);
-  return normalizeMcpCalls(parsed);
+  const allowedNames = new Set(toolSchemas?.map((t) => t.name) ?? []);
+  return normalizeMcpCalls(parsed, allowedNames);
 }
 
 async function evaluateResult(args: {
@@ -363,17 +362,30 @@ function parseMcpResultEvaluation(text: string): {
 
 async function runToolCallsDirect(args: {
   calls: McpPlannedCall[];
-  env?: 'local' | 'dev' | 'hotfix' | 'lab' | 'prod';
+  toolSchemas: ToolSchema[] | null;
 }): Promise<McpToolResult[]> {
-  const { calls, env = 'local' } = args;
+  const { calls, toolSchemas } = args;
   if (!calls.length) return [];
+
+  const nameToSchema = new Map<string, ToolSchema>();
+  for (const s of toolSchemas ?? []) nameToSchema.set(s.name, s);
 
   const TOOL_CALL_TIMEOUT_MS = 10_000;
   const results: McpToolResult[] = [];
   for (const call of calls) {
+    const schema = nameToSchema.get(call.name);
+    if (!schema) {
+      results.push({
+        name: call.name,
+        arguments: call.arguments,
+        ok: false,
+        error: `Unknown tool: ${call.name}`,
+      });
+      continue;
+    }
     try {
       const result = await withTimeout(
-        mcpHttpCallTool(call.name, call.arguments, env),
+        mcpHttpCallTool(schema.url, call.name, call.arguments, schema.env),
         TOOL_CALL_TIMEOUT_MS,
         `Tool call timed out after ${TOOL_CALL_TIMEOUT_MS / 1000}s: ${call.name}`
       );
@@ -419,51 +431,26 @@ function buildMcpToolSystemMessage(args: {
   };
 }
 
-type McpHttpToolSchema = {
-  name: string;
-  description?: string;
-  inputSchema?: unknown;
-};
+type McpConfig = { baseUrl: string; env: string };
 
-function getMcpHttpBaseUrl(): string {
-  // Client-side: call same-origin Next route.
-  return '/api/mcp/sql';
-}
-
-async function mcplHttpListTools(): Promise<McpHttpToolSchema[] | null> {
-  try {
-    const res = await fetch(`${getMcpHttpBaseUrl()}?tool=list`, { method: 'GET' });
-    if (!res.ok) return null;
-    const json = (await res.json()) as { tools?: unknown };
-    if (!Array.isArray(json.tools)) return null;
-
-    const normalized: McpHttpToolSchema[] = [];
-    for (const t of json.tools) {
-      if (!t || typeof t !== 'object') continue;
-      const tool = t as { name?: unknown; description?: unknown; inputSchema?: unknown };
-      if (typeof tool.name !== 'string') continue;
-      normalized.push({
-        name: tool.name,
-        description: typeof tool.description === 'string' ? tool.description : undefined,
-        inputSchema: tool.inputSchema,
-      });
-    }
-
-    const allow = new Set<McpToolName>(['mysql_query', 'mysql_list_tables', 'mysql_describe_table']);
-    return normalized.filter((t) => allow.has(t.name as McpToolName));
-  } catch {
-    return null;
-  }
+function getEnabledMcpConfigs(agent: ChatAgent): McpConfig[] {
+  const configs: McpConfig[] = [];
+  const env = (agent.mysqlMcpEnv ?? 'local') as string;
+  if (agent.useMysqlMcp) configs.push({ baseUrl: '/api/mcp/sql', env });
+  if (agent.useLmsMcp) configs.push({ baseUrl: '/api/mcp/lms', env });
+  if (agent.useImageMcp) configs.push({ baseUrl: '/api/mcp/image', env: 'local' });
+  if (agent.useBrowserMcp) configs.push({ baseUrl: '/api/mcp/browser', env: 'local' });
+  return configs;
 }
 
 async function mcpHttpCallTool(
-  name: McpToolName,
+  baseUrl: string,
+  name: string,
   args: Record<string, unknown>,
-  env: 'local' | 'dev' | 'hotfix' | 'lab' | 'prod' = 'local'
+  env: string = 'local'
 ): Promise<{ content: McpToolResultContent[] }> {
-  const baseUrl = getMcpHttpBaseUrl();
   const separator = baseUrl.includes('?') ? '&' : '?';
-  const url = `${baseUrl}${separator}env=${env}`;
+  const url = `${baseUrl}${separator}env=${encodeURIComponent(env)}`;
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -555,7 +542,7 @@ function parseMcpTaskPlan(text: string): McpPlan {
   return { needed: true, tasks: deduped, reasoning: reasoning || 'Needed.' };
 }
 
-function normalizeMcpCalls(input: unknown): McpPlannedCall[] {
+function normalizeMcpCalls(input: unknown, allowedToolNames: Set<string>): McpPlannedCall[] {
   if (!input || typeof input !== 'object') return [];
   const obj = input as { calls?: unknown };
   const rawCalls = Array.isArray(obj.calls) ? obj.calls : [];
@@ -564,13 +551,7 @@ function normalizeMcpCalls(input: unknown): McpPlannedCall[] {
   for (const c of rawCalls.slice(0, 3)) {
     if (!c || typeof c !== 'object') continue;
     const call = c as { name?: unknown; arguments?: unknown };
-    if (
-      call.name !== 'mysql_query' &&
-      call.name !== 'mysql_list_tables' &&
-      call.name !== 'mysql_describe_table'
-    ) {
-      continue;
-    }
+    if (typeof call.name !== 'string' || !allowedToolNames.has(call.name)) continue;
     if (!call.arguments || typeof call.arguments !== 'object') continue;
     calls.push({ name: call.name, arguments: call.arguments as Record<string, unknown> });
   }
@@ -578,15 +559,42 @@ function normalizeMcpCalls(input: unknown): McpPlannedCall[] {
   return calls;
 }
 
-type McpMcpToolSchema = {
+type ToolSchema = {
+  url: string;
   name: string;
   description?: string;
   inputSchema?: unknown;
+  env: string;
 };
 
-async function fetchMcpToolSchemas(): Promise<McpMcpToolSchema[] | null> {
-  // Backwards-compatible name, now sourced from the HTTP tool endpoint.
-  return await mcplHttpListTools();
+async function fetchMcpToolSchemas(agent: ChatAgent): Promise<ToolSchema[] | null> {
+  const configs = getEnabledMcpConfigs(agent);
+  if (!configs.length) return null;
+
+  const normalized: ToolSchema[] = [];
+  for (const { baseUrl, env } of configs) {
+    try {
+      const res = await fetch(`${baseUrl}?tool=list`, { method: 'GET' });
+      if (!res.ok) continue;
+      const json = (await res.json()) as { tools?: unknown };
+      if (!Array.isArray(json.tools)) continue;
+      for (const t of json.tools) {
+        if (!t || typeof t !== 'object') continue;
+        const tool = t as { name?: unknown; description?: unknown; inputSchema?: unknown };
+        if (typeof tool.name !== 'string') continue;
+        normalized.push({
+          url: baseUrl,
+          name: tool.name,
+          description: typeof tool.description === 'string' ? tool.description : undefined,
+          inputSchema: tool.inputSchema,
+          env,
+        });
+      }
+    } catch {
+      // Skip this MCP on fetch error
+    }
+  }
+  return normalized.length ? normalized : null;
 }
 
 
