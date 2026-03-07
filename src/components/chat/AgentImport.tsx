@@ -51,10 +51,15 @@ export default function AgentImport({ onClose, onImportSuccess }: AgentImportPro
           }
           
           // Create the agent
+          const knowledge =
+            agentData.knowledge && typeof agentData.knowledge === 'object' && !Array.isArray(agentData.knowledge)
+              ? (agentData.knowledge as Record<string, string[]>)
+              : {};
           await agentDB.create({
             name: agentData.name,
             systemPrompt: agentData.systemPrompt,
             knowledgeGenerationPrompt: typeof agentData.knowledgeGenerationPrompt === 'string' ? agentData.knowledgeGenerationPrompt : '',
+            knowledge,
             modelName: agentData.modelName,
             provider: agentData.provider as 'openrouter' | 'openai',
             examplePrompts,
