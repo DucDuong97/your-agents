@@ -236,6 +236,7 @@ function isReadOnlySql(sql: string): boolean {
   if (hasMultipleStatements(s)) return false;
 
   const denied = [
+    'SHOW',
     'INSERT',
     'UPDATE',
     'DELETE',
@@ -337,7 +338,7 @@ async function handleListTables(env?: string): Promise<NextResponse> {
 async function handleDescribeTable(table: string, env?: string): Promise<NextResponse> {
   const t = table.trim();
   if (!t) return err('Missing required argument: table', 400);
-  if (!/^[A-Za-z0-9_]+$/u.test(t)) {
+  if (!/^[A-Za-z0-9_\.]+$/u.test(t)) {
     return err('Invalid table name. Use only letters, numbers, _.', 400);
   }
 

@@ -38,7 +38,7 @@ export function useKnowledgeManager(agent: ChatAgent | null | undefined) {
       const response = await generateChatCompletion({
         title: 'Knowledge Generation',
         provider: agent.provider,
-        model: 'openai/gpt-o3-mini',
+        model: 'openai/o3-mini',
         apiKey,
         messages: [
           {
@@ -56,14 +56,17 @@ export function useKnowledgeManager(agent: ChatAgent | null | undefined) {
           },
         ],
       });
+      console.log('response', response.content);
 
       const raw = stripFences(response.content);
+      console.log('raw', raw);
       if (raw === 'NONE') {
         setLastGeneratedEntry(null);
         return null;
       }
 
       const parsed = parseKeyValueEntry(raw) || parseKeyValueEntry2(raw);
+      console.log('parsed', parsed);
       if (parsed) {
         setLastGeneratedEntry(parsed);
       } else {
@@ -387,26 +390,34 @@ You will be given the last user message, the assistant's response, and the tool 
 
 A knowledge entry should be a key-value pair. The key should be a short, descriptive name for the knowledge. The value should be a concise summary of the knowledge related to the key's name.
 
-Task:
+# Task:
 - Produce at most ONE new knowledge entry to append to the existing knowledge.
 - If there is nothing worth saving, output exactly: NONE.
 
-Notes:
-- Prefer durable facts, and stable context.
-- Avoid ephemeral details unless clearly important long-term.
-- Output plain text only, no markdown headings, no code fences.
-
-Output format:
+# Output format:
 \`\`\`
 key: a_short_descriptive_name
 value: This is a concise summary of the knowledge related to the key's name.
 \`\`\`
 
-The knowledge output should follow the following prompt:
+# Example:
+\`\`\`
+key: The current date and time
+value: The current date and time can be obtained by using **CurrentDateFunction** and **CurrentTimeFunction**
+\`\`\`
+
+# The knowledge output should follow the following prompt:
 {{knowledge_generation_prompt}}
 
-And, please do not produce new knowledge entries that might be duplicated with the existing knowledge. Here is the current knowledge:
+# And, please do not produce new knowledge entries that might be duplicated with the existing knowledge. Here is the current knowledge:
 {{current_knowledge}}
+
+# Notes:
+- Prefer durable facts, and stable context.
+- Avoid ephemeral details unless clearly important long-term.
+- Output plain text only, no markdown headings, no code fences.
+- Please follow the output format strictly.
+- You can mention other knowledge in the value by wrapping the key in double asterisk like the example above.
 `;
 
 const KNOWLEDGE_GENERATION_USER_MESSAGE = `
