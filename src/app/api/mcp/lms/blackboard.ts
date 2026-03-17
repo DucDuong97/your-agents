@@ -83,6 +83,188 @@ async function fetchAllPages(
   }
   return { ...paginated, results: combined, paging: {} };
 }
+/**
+ * Standalone port of BlackboardClient._extract_module_item_data (Python) to JavaScript.
+ * - No dependencies
+ * - Throws if content is falsy/empty
+ * - Mirrors branching/field mapping from the original function
+ */
+
+// ---- "Enums" (string values are placeholders; replace with your real BB values if you have them) ----
+const BlackboardContentType = Object.freeze({
+  FOLDER: "resource/x-bb-folder",
+  FILE: "resource/x-bb-file",
+  // BB sometimes uses different spellings for external link + LTI ids.
+  EXTERNAL_LINK: "resource/x-bb-external-link",
+  EXTERNAL_LINK_ALT: "resource/x-bb-externallink",
+  ASSESSMENT_TEST_LINK: "resource/x-bb-asmt-test-link",
+  LTI_LINK: "resource/x-bb-lti-link",
+  LTI_LINK_ALT: "resource/x-bb-blti-link",
+  DOCUMENT: "resource/x-bb-document",
+  UNKNOWN: "UNKNOWN",
+});
+
+const PluginType = Object.freeze({
+  TEXT: "TEXT",
+  FILE: "FILE",
+  EXTERNAL_URL: "EXTERNAL_URL",
+  ASSIGNMENT: "ASSIGNMENT",
+});
+
+// ---- Error type ----
+class BlackboardResourceNotFoundException extends Error {
+  constructor(message = "Blackboard resource not found") {
+    super(message);
+    this.name = "BlackboardResourceNotFoundException";
+  }
+}
+
+/**
+ * Best-effort equivalent of self._extract_content_published_status(content).
+ * If you already have an implementation, pass it in via options.extractContentPublishedStatus.
+ */
+function defaultExtractContentPublishedStatus(content: any) {
+  // Common BB payload patterns vary; keep conservative defaults.
+  const available = content?.availability?.available;
+  if (typeof available === "boolean") return available;
+  if (typeof available === "string") {
+    const v = available.trim().toLowerCase();
+    if (["yes", "y", "true", "available"].includes(v)) return true;
+    if (["no", "n", "false", "unavailable"].includes(v)) return false;
+  }
+  if (typeof content?.isAvailable === "boolean") return content.isAvailable;
+  if (typeof content?.available === "boolean") return content.available;
+  return false;
+}
+
+function isPlainNonEmptyObject(value: any) {
+  return !!value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).length > 0;
+}
+
+function joinUrl(baseUrl: string, pathOrUrl: string) {
+  if (!pathOrUrl) return null;
+  if (/^https?:\/\//i.test(pathOrUrl)) return pathOrUrl;
+  if (!baseUrl) return pathOrUrl;
+  return `${String(baseUrl).replace(/\/+$/, "")}/${String(pathOrUrl).replace(/^\/+/, "")}`;
+}
+
+function firstHref(links: any[]) {
+  if (!Array.isArray(links)) return null;
+  const withHref = links.find((l) => l && typeof l.href === "string");
+  return withHref?.href ?? null;
+}
+
+
+function extractModuleItemData(content: any, options: { apiBaseUrl?: string, extractContentPublishedStatus?: (content: any) => boolean } = {}) {
+  const { apiBaseUrl = "", extractContentPublishedStatus = defaultExtractContentPublishedStatus } = options;
+
+  if (Array.isArray(content)) {
+    return content.map((c: any) => extractModuleItemData(c, options));
+  }
+
+  if (!isPlainNonEmptyObject(content)) {
+    throw new BlackboardResourceNotFoundException();
+  }
+
+  let details = null;
+
+  const rawHandlerId = content?.contentHandler?.id;
+  const handlerId = typeof rawHandlerId === "string" ? rawHandlerId : BlackboardContentType.UNKNOWN;
+
+  const normalizedHandlerId = (() => {
+    switch (handlerId) {
+      case BlackboardContentType.EXTERNAL_LINK_ALT:
+        return BlackboardContentType.EXTERNAL_LINK;
+      case BlackboardContentType.LTI_LINK_ALT:
+        return BlackboardContentType.LTI_LINK;
+      case BlackboardContentType.DOCUMENT:
+        // Treat BB documents as a text-like content item for plugin mapping.
+        return BlackboardContentType.DOCUMENT;
+      default:
+        return handlerId;
+    }
+  })();
+
+  // "type" is a reserved-ish identifier in some contexts; use pluginType locally.
+  let reference;
+
+  switch (normalizedHandlerId) {
+    case BlackboardContentType.FOLDER: {
+      reference = content.id;
+      break;
+    }
+
+    case BlackboardContentType.DOCUMENT: {
+      reference = content.id;
+      break;
+    }
+
+    case BlackboardContentType.FILE: {
+      reference = content.id;
+      break;
+    }
+
+    case BlackboardContentType.EXTERNAL_LINK: {
+      break;
+    }
+
+    case BlackboardContentType.ASSESSMENT_TEST_LINK: {
+      reference = content.contentHandler.gradeColumnId;
+
+      const href = Array.isArray(content.links)
+        ? (content.links.find((l) => l && "href" in l) || {}).href
+        : null;
+
+      const secureBrowserRequired =
+        content?.contentHandler?.proctoring &&
+        "secureBrowserRequiredToTake" in content.contentHandler.proctoring
+          ? Boolean(content.contentHandler.proctoring.secureBrowserRequiredToTake)
+          : false;
+
+      details = {
+        id: reference,
+        type: PluginType.ASSIGNMENT,
+        is_lockdown_enabled: secureBrowserRequired,
+        // In your sample data, href is a UI redirect ("/ultra/redirect?..."), not an API href.
+        // Only join with apiBaseUrl when it looks like an API-ish path.
+        url:
+          typeof href === "string" && /^\/(learn\/api\/public\/v1|courses\/|v1\/)/.test(href)
+            ? joinUrl(apiBaseUrl, href)
+            : null,
+        extra: "assessmentId" in (content.contentHandler || {})
+          ? { assessment_id: content.contentHandler.assessmentId }
+          : null,
+      };
+      break;
+    }
+
+    case BlackboardContentType.LTI_LINK: {
+      reference = content.id;
+
+      details = {
+        id: reference,
+        type: PluginType.EXTERNAL_URL,
+        extra: content?.contentHandler?.customParameters ?? {},
+      };
+      break;
+    }
+  }
+
+  const isKnownLmsType =
+    typeof normalizedHandlerId === "string" && Object.values(BlackboardContentType).includes(normalizedHandlerId);
+
+  return {
+    id: content.id,
+    module_id: content.parentId,
+    title: content.title,
+    lms_type: isKnownLmsType ? normalizedHandlerId : BlackboardContentType.UNKNOWN,
+    reference,
+    position: content.position,
+    is_published: Boolean(extractContentPublishedStatus(content)),
+    details,
+  };
+}
+
 
 /** Get Blackboard course content (syllabus/contents) with recursive=true. Follows paging until all results are fetched. Returns only items that are not folder modules and whose contentHandler.id is in the supported pull types. */
 export async function getCourseContent(params: GetCourseContentParams): Promise<unknown> {
@@ -91,7 +273,7 @@ export async function getCourseContent(params: GetCourseContentParams): Promise<
   const out = await fetchAllPages(apiBaseUrl, url, headers);
   if (out && typeof out === 'object' && Array.isArray((out as PaginatedResponse).results)) {
     const paginated = out as PaginatedResponse;
-    return { ...paginated, results: filterCourseContentResults(paginated.results!) };
+    return { ...paginated, results: extractModuleItemData(filterCourseContentResults(paginated.results!)) };
   }
   return out;
 }
