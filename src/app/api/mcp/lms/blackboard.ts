@@ -148,13 +148,6 @@ function joinUrl(baseUrl: string, pathOrUrl: string) {
   return `${String(baseUrl).replace(/\/+$/, "")}/${String(pathOrUrl).replace(/^\/+/, "")}`;
 }
 
-function firstHref(links: any[]) {
-  if (!Array.isArray(links)) return null;
-  const withHref = links.find((l) => l && typeof l.href === "string");
-  return withHref?.href ?? null;
-}
-
-
 function extractModuleItemData(content: any, options: { apiBaseUrl?: string, extractContentPublishedStatus?: (content: any) => boolean } = {}) {
   const { apiBaseUrl = "", extractContentPublishedStatus = defaultExtractContentPublishedStatus } = options;
 

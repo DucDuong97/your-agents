@@ -3,6 +3,81 @@
  * Canvas has no single "contents" endpoint; content is organized as modules and module items.
  */
 
+const CanvasModuleItemType = Object.freeze({
+  PAGE: 'Page',
+  FILE: 'File',
+  EXTERNAL_URL: 'ExternalUrl',
+  EXTERNAL_TOOL: 'ExternalTool',
+  ASSIGNMENT: 'Assignment',
+  UNKNOWN: 'Unknown',
+  SUB_HEADER: 'SubHeader',
+  DISCUSSION: 'Discussion',
+  QUIZ: 'Quiz',
+} as const);
+
+type CanvasModuleItemTypeValue = (typeof CanvasModuleItemType)[keyof typeof CanvasModuleItemType];
+
+const PluginType = Object.freeze({
+  ASSIGNMENT: 'ASSIGNMENT',
+  EXTERNAL_URL: 'EXTERNAL_URL',
+} as const);
+
+const CANVAS_MATHGPT_PLUGIN_TYPE_MAPPING: Partial<Record<CanvasModuleItemTypeValue, (typeof PluginType)[keyof typeof PluginType] | null>> =
+  Object.freeze({
+    [CanvasModuleItemType.ASSIGNMENT]: PluginType.ASSIGNMENT,
+    [CanvasModuleItemType.EXTERNAL_TOOL]: null,
+    [CanvasModuleItemType.EXTERNAL_URL]: PluginType.EXTERNAL_URL,
+  });
+
+function isKnownCanvasModuleItemType(value: unknown): value is CanvasModuleItemTypeValue {
+  return typeof value === 'string' && Object.values(CanvasModuleItemType).includes(value as CanvasModuleItemTypeValue);
+}
+
+function toOptionalString(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  return String(value);
+}
+
+function toOptionalInt(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.trunc(n) : null;
+}
+
+function requireField(raw: unknown, key: string): unknown {
+  if (!raw || typeof raw !== 'object') throw new Error('Expected raw object');
+  if (!(key in raw)) throw new Error(`Missing required field: ${key}`);
+  return (raw as Record<string, unknown>)[key];
+}
+
+function convertCanvasModuleItemToLmsSchema(raw: unknown) {
+  const id = toOptionalString(requireField(raw, 'id'));
+  const moduleId = toOptionalString(requireField(raw, 'module_id'));
+  const title = toOptionalString(requireField(raw, 'title'));
+  const position = Number(requireField(raw, 'position'));
+  const published = Boolean(requireField(raw, 'published'));
+  const type = toOptionalString(requireField(raw, 'type'));
+
+  const obj = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  const contentId = toOptionalInt(obj.content_id);
+  const contentUrl = toOptionalString(obj.page_url);
+
+  return {
+    id,
+    module_id: moduleId,
+    title,
+    position,
+    type:
+      type && Object.prototype.hasOwnProperty.call(CANVAS_MATHGPT_PLUGIN_TYPE_MAPPING, type)
+        ? (CANVAS_MATHGPT_PLUGIN_TYPE_MAPPING as Record<string, unknown>)[type]
+        : null,
+    is_published: published,
+    content_url: contentUrl,
+    content_id: contentId,
+    lms_type: isKnownCanvasModuleItemType(type) ? type : CanvasModuleItemType.UNKNOWN,
+  };
+}
+
 /** Fetch all pages of a Canvas API list endpoint; Canvas returns the array as the top-level JSON. */
 async function fetchCanvasPaginated<T>(
   baseUrl: string,
@@ -48,7 +123,7 @@ export async function getCourseContent(params: GetCourseContentParams): Promise<
       `${apiBaseUrl}${coursePath}/modules/${mod.id}/items`,
       headers
     );
-    modulesWithItems.push({ module: mod, items });
+    modulesWithItems.push({ module: mod, items: items.map(convertCanvasModuleItemToLmsSchema) });
   }
   return { modules: modulesWithItems };
 }

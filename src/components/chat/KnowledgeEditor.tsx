@@ -175,7 +175,7 @@ export default function KnowledgeEditor({ open, knowledge, onClose, onSave }: Kn
 
           <div className="flex gap-4 flex-1 min-h-0">
             {/* Key list (sorted ascending) */}
-            <div className="flex-shrink-0 w-48 flex flex-col">
+            <div className="flex-shrink-0 w-64 flex flex-col">
               <span className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Keys</span>
               <ul className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-y-auto flex-1 min-h-0 bg-gray-50 dark:bg-gray-900/50">
                 {sortedKeys.length === 0 ? (

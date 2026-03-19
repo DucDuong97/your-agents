@@ -395,7 +395,7 @@ export async function GET(request: NextRequest) {
         {
           name: 'mysql_query',
           description:
-            'Execute a read-only SQL query against MySQL. Allowed: SELECT/SHOW/DESCRIBE/EXPLAIN (and WITH ... SELECT). Writes are blocked. Remember to use LIMIT (max 20 rows) to prevent overwhelming the database.',
+            'Execute a read-only SQL query against MySQL. Allowed: SELECT/SHOW/DESCRIBE/EXPLAIN (and WITH ... SELECT). Writes are blocked. Remember to use LIMIT (max 20 rows) to prevent overwhelming the database. Remember to wrap table names, column names in backticks (e.g. `table_name`) to prevent SQL injection.',
           inputSchema: {
             type: 'object',
             additionalProperties: false,

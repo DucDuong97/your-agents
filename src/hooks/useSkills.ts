@@ -611,6 +611,10 @@ Your job: decide whether MCP tools are needed, and if yes, produce a short plain
 - You will be given the conversation history and the list of tools available to understand the requirement(s) and know what is possible to be executed.
 - Think step by step.
 - The task description should be concise and actionable.
+- Please read carefully the <Conversation/> before defining a task, since the task output might be available there.
+
+# IMPORTANT:
+- Please read carefully the <Conversation/> before defining a task, since the task output might be available there.
 
 # Output: MUST be plain text (no JSON, no markdown fences) in exactly this format:
 REASONING:

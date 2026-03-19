@@ -38,18 +38,19 @@ export function useKnowledgeManager(agent: ChatAgent | null | undefined) {
       const response = await generateChatCompletion({
         title: 'Knowledge Generation',
         provider: agent.provider,
-        model: 'openai/o3-mini',
+        model: 'openai/o3',
         apiKey,
         messages: [
           {
             role: 'system',
             content: KNOWLEDGE_GENERATION_PROMPT
               .replace('{{knowledge_generation_prompt}}', kgPrompt)
-              .replace('{{current_knowledge}}', JSON.stringify(agent.knowledge ?? {})),
+              .replace('{{current_knowledge}}', agent.knowledge ? Object.entries(agent.knowledge).map(([key, ]) => key).join(', ') : ""),
           },
           {
             role: 'user',
             content: KNOWLEDGE_GENERATION_USER_MESSAGE
+              .replace('{{conversation}}', messages.map((m) => `<${m.role}>${m.content}</${m.role}>`).join('\n'))
               .replace('{{user_message}}', lastUserMessage)
               .replace('{{assistant_response}}', lastAssistantResponse)
               .replace('{{tool_calls}}', lastToolCalls),
@@ -158,9 +159,22 @@ export function useKnowledgeManager(agent: ChatAgent | null | undefined) {
     }
 
     const knowledgeLines: string[] = [];
+    const loadedKeys = new Set<string>(selectedKeys);
+
     for (const key of selectedKeys) {
       const values = knowledge?.[key];
-      knowledgeLines.push(`- ${key}: ${values?.slice(-5).join(' | ')}`);
+      const joined = values?.slice(-5).join(' | ') ?? '';
+      knowledgeLines.push(`- ${key}: ${joined}`);
+
+      // Resolve 1 level of sub-knowledge references wrapped in **SubKey**
+      const subKeyMatches = joined.matchAll(/\*\*([^*]+)\*\*/g);
+      for (const match of subKeyMatches) {
+        const subKey = match[1].trim();
+        if (!loadedKeys.has(subKey) && knowledge?.[subKey]?.length) {
+          loadedKeys.add(subKey);
+          knowledgeLines.push(`  - ${subKey}: ${knowledge[subKey].slice(-5).join(' | ')}`);
+        }
+      }
     }
 
     if (knowledgeLines.length === 0) {
@@ -386,13 +400,13 @@ function getLastUserApiMessageText(apiMessages: ApiMessage[]): string {
 const KNOWLEDGE_GENERATION_PROMPT = `
 You are a knowledge extraction assistant. You write concise, high-signal memory entries for future conversations.
 
-You will be given the last user message, the assistant's response, and the tool calls used to generate the response. You will need to extract the knowledge from those messages and return it in a structured format.
+You will be given the conversation history of a chat session. You will need to extract the knowledge from those messages and return it in a structured format.
 
 A knowledge entry should be a key-value pair. The key should be a short, descriptive name for the knowledge. The value should be a concise summary of the knowledge related to the key's name.
 
 # Task:
 - Produce at most ONE new knowledge entry to append to the existing knowledge.
-- If there is nothing worth saving, output exactly: NONE.
+- If there is nothing worth saving, output exactly: NONE (reason why no knowledge is needed).
 
 # Output format:
 \`\`\`
@@ -409,18 +423,22 @@ value: The current date and time can be obtained by using **CurrentDateFunction*
 # The knowledge output should follow the following prompt:
 {{knowledge_generation_prompt}}
 
-# And, please do not produce new knowledge entries that might be duplicated with the existing knowledge. Here is the current knowledge:
+# And, please do not produce new knowledge entries that might be duplicated with the existing knowledge. Here is the current knowledge keys:
 {{current_knowledge}}
 
 # Notes:
 - Prefer durable facts, and stable context.
-- Avoid ephemeral details unless clearly important long-term.
+- Avoid ephemeral details unless clearly important long-term. For example, if user asks about getting the information of "Alex", you can save the workflow of retrieving personal information by a name as knowledge, instead the workflow of retrieving personal information of Alex.
 - Output plain text only, no markdown headings, no code fences.
 - Please follow the output format strictly.
 - You can mention other knowledge in the value by wrapping the key in double asterisk like the example above.
 `;
 
 const KNOWLEDGE_GENERATION_USER_MESSAGE = `
+<Conversation>
+{{conversation}}
+</Conversation>
+
 <UserMessage>
 {{user_message}}
 </UserMessage>

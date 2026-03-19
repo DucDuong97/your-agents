@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Home, Edit, Check, X } from 'lucide-react';
+import { ArrowLeft, Home, Edit, Check, X, Plus, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { ChatAgent, Chat } from '@/lib/db';
 
@@ -10,6 +10,8 @@ interface HeaderProps {
   handleEditAgent: () => void;
   handleClearChat: () => void;
   handleUpdateChatTitle?: (newTitle: string) => void;
+  handleNewChat?: () => void;
+  handleDeleteChat?: () => void;
 }
 
 export default function Header({ 
@@ -19,6 +21,8 @@ export default function Header({
   handleEditAgent,
   handleClearChat,
   handleUpdateChatTitle,
+  handleNewChat,
+  handleDeleteChat,
 }: HeaderProps) {
 
   const router = useRouter();
@@ -160,13 +164,33 @@ export default function Header({
             </div>
           </div>
 
-          <div className="flex-shrink-0 ml-2">
+          <div className="flex-shrink-0 ml-2 flex items-center gap-1 sm:gap-2">
+            {handleNewChat && (
+              <button
+                onClick={handleNewChat}
+                className="p-1 sm:p-2 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white rounded-lg touch-manipulation"
+                aria-label="New chat"
+                title="New chat"
+              >
+                <Plus size={18} />
+              </button>
+            )}
             <button
               onClick={handleClearChat}
               className="px-2 py-1 sm:px-3 sm:py-2 text-xs sm:text-sm bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg touch-manipulation"
             >
               Clear
             </button>
+            {handleDeleteChat && (
+              <button
+                onClick={handleDeleteChat}
+                className="p-1 sm:p-2 text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 rounded-lg touch-manipulation"
+                aria-label="Delete chat"
+                title="Delete chat"
+              >
+                <Trash2 size={18} />
+              </button>
+            )}
           </div>
         </div>
       </header>

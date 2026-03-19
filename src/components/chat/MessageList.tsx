@@ -392,6 +392,9 @@ export default function MessageList({ messages, isGenerating, streamingContent, 
           onConfirm={handleKnowledgeConfirm}
         />
       )}
+
+
+      {/* Skill generating button */}
     </div>
   );
 } 
