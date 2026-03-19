@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { Message } from '@/lib/db';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -25,6 +25,9 @@ interface MessageListProps {
   isGenerating: boolean;
   streamingContent: string | null;
   onAssistantMessageClick?: (message: Message) => void;
+  canGenerateKnowledge?: boolean;
+  isKnowledgeGenerating?: boolean;
+  onGenerateKnowledge?: (messagesUpToMessage: Message[]) => void;
   knowledge?: Record<string, string[]>;
   onUpdateKnowledge?: (originalKey: string, newKey: string, value: string, originalValues: string[]) => Promise<void>;
 }
@@ -90,7 +93,17 @@ function extractKnowledgeKeys(content: string): string[] {
   return keys;
 }
 
-export default function MessageList({ messages, isGenerating, streamingContent, onAssistantMessageClick, knowledge, onUpdateKnowledge }: MessageListProps) {
+export default function MessageList({
+  messages,
+  isGenerating,
+  streamingContent,
+  onAssistantMessageClick,
+  canGenerateKnowledge = false,
+  isKnowledgeGenerating = false,
+  onGenerateKnowledge,
+  knowledge,
+  onUpdateKnowledge,
+}: MessageListProps) {
   const [selectedKnowledgeKey, setSelectedKnowledgeKey] = useState<string | null>(null);
   const [originalKnowledgeKey, setOriginalKnowledgeKey] = useState<string | null>(null);
   const [selectedKnowledgeValue, setSelectedKnowledgeValue] = useState<string>('');
@@ -102,7 +115,7 @@ export default function MessageList({ messages, isGenerating, streamingContent, 
     return typeof message.content === 'string' && message.content.startsWith('[KNOWLEDGE]');
   });
 
-  const handleTagClick = (key: string) => {
+  const handleTagClick = useCallback((key: string) => {
     if (!knowledge || !onUpdateKnowledge) return;
     
     const values = knowledge[key];
@@ -115,9 +128,9 @@ export default function MessageList({ messages, isGenerating, streamingContent, 
     setOriginalKnowledgeKey(key);
     setSelectedKnowledgeValue(value);
     setShowKnowledgeModal(true);
-  };
+  }, [knowledge, onUpdateKnowledge]);
 
-  const handleKnowledgeConfirm = async (newKey: string, value: string) => {
+  const handleKnowledgeConfirm = useCallback(async (newKey: string, value: string) => {
     if (!onUpdateKnowledge || !originalKnowledgeKey || !knowledge) return;
     
     // Get the original values for the key
@@ -130,14 +143,25 @@ export default function MessageList({ messages, isGenerating, streamingContent, 
     setSelectedKnowledgeKey(null);
     setOriginalKnowledgeKey(null);
     setSelectedKnowledgeValue('');
-  };
+  }, [knowledge, onUpdateKnowledge, originalKnowledgeKey]);
 
-  const handleKnowledgeCancel = () => {
+  const handleKnowledgeCancel = useCallback(() => {
     setShowKnowledgeModal(false);
     setSelectedKnowledgeKey(null);
     setOriginalKnowledgeKey(null);
     setSelectedKnowledgeValue('');
-  };
+  }, []);
+
+  const handleGenerateKnowledgeForMessage = useCallback((messageId: string) => {
+    if (!onGenerateKnowledge) return;
+
+    const messagesById = new Map<string, number>();
+    messages.forEach((m, idx) => messagesById.set(String(m.id), idx));
+
+    const idx = messagesById.get(String(messageId));
+    if (idx === undefined || idx < 0) return;
+    onGenerateKnowledge(messages.slice(0, idx + 1));
+  }, [messages, onGenerateKnowledge]);
 
   return (
     <div className="space-y-4 sm:space-y-6 px-2 sm:px-4 py-2">
@@ -163,8 +187,36 @@ export default function MessageList({ messages, isGenerating, streamingContent, 
             <span className="text-[10px] sm:text-xs text-gray-500">
               {new Date(message.createdAt).toLocaleTimeString()}
             </span>
-            {(message.role === 'assistant' && (message.agentRunSnapshot || message.price)) && (
+            {message.role === 'assistant' && (
               <div className="ml-auto flex items-center gap-2">
+                {canGenerateKnowledge && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleGenerateKnowledgeForMessage(String(message.id));
+                    }}
+                    disabled={isKnowledgeGenerating || isGenerating}
+                    className="px-3 py-1 text-xs bg-amber-500 hover:bg-amber-600 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                  >
+                    {isKnowledgeGenerating ? (
+                      <>
+                        <svg className="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                        </svg>
+                        Generating...
+                      </>
+                    ) : (
+                      <>
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                        </svg>
+                        Generate Knowledge
+                      </>
+                    )}
+                  </button>
+                )}
                 {message.agentRunSnapshot && (
                   <button
                     onClick={(e) => {
