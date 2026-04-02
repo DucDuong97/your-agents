@@ -228,7 +228,7 @@ export default function MessageList({
                     Show agent&apos;s run
                   </button>
                 )}
-                {message.price && (
+                {message.price && false && (
                   <div className="relative group">
                     <span className="text-[10px] sm:text-xs text-gray-500 cursor-help">
                       ${message.price.totalCost?.toFixed(2)} USD
