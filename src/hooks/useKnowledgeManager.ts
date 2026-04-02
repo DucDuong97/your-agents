@@ -12,6 +12,7 @@ export function useKnowledgeManager(agent: ChatAgent | null | undefined) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastGeneratedEntry, setLastGeneratedEntry] = useState<{ key: string; value: string } | null>(null);
+  const [noKnowledgeReason, setNoKnowledgeReason] = useState<string | null>(null);
 
   const { getApiKeyForAgentOrRedirect } = useApiKey();
 
@@ -29,6 +30,7 @@ export function useKnowledgeManager(agent: ChatAgent | null | undefined) {
 
     setIsGenerating(true);
     setError(null);
+    setNoKnowledgeReason(null);
 
     try {
       const lastUserMessage = getMessageText(getLastMessageByRole(messages, 'user'));
@@ -57,11 +59,13 @@ export function useKnowledgeManager(agent: ChatAgent | null | undefined) {
           },
         ],
       });
-      console.log('response', response.content);
 
       const raw = stripFences(response.content);
       console.log('raw', raw);
-      if (raw === 'NONE') {
+      if (raw.startsWith('NONE')) {
+        const reasonMatch = raw.match(/^NONE\s*\(([^)]+)\)/);
+        const reason = reasonMatch ? reasonMatch[1].trim() : 'No relevant knowledge to extract from this conversation.';
+        setNoKnowledgeReason(reason);
         setLastGeneratedEntry(null);
         return null;
       }
@@ -71,6 +75,7 @@ export function useKnowledgeManager(agent: ChatAgent | null | undefined) {
       if (parsed) {
         setLastGeneratedEntry(parsed);
       } else {
+        setNoKnowledgeReason('Could not parse the generated knowledge entry.');
         setLastGeneratedEntry(null);
       }
 
@@ -254,6 +259,8 @@ export function useKnowledgeManager(agent: ChatAgent | null | undefined) {
     isGenerating,
     error,
     lastGeneratedEntry,
+    noKnowledgeReason,
+    setNoKnowledgeReason,
     confirmLastGeneratedKnowledge,
     updateKnowledgeEntry,
   };

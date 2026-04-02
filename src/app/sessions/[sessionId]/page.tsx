@@ -87,6 +87,8 @@ export default function SessionPage() {
     buildKnowledgeSystemMessage,
     confirmLastGeneratedKnowledge,
     lastGeneratedEntry,
+    noKnowledgeReason,
+    setNoKnowledgeReason,
     updateKnowledgeEntry,
     isGenerating: isKnowledgeGenerating,
   } = useKnowledgeManager(selectedAgent);
@@ -603,6 +605,26 @@ export default function SessionPage() {
           onCancel={handleCancelKnowledge}
           onConfirm={handleConfirmKnowledge}
         />
+      )}
+
+      {noKnowledgeReason && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 max-w-sm w-full mx-4">
+            <div className="flex items-center gap-3 mb-3">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-amber-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <h3 className="font-semibold text-gray-900 dark:text-gray-100">No Knowledge Generated</h3>
+            </div>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-5">{noKnowledgeReason}</p>
+            <button
+              onClick={() => setNoKnowledgeReason(null)}
+              className="w-full px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-medium transition-colors"
+            >
+              OK
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );
