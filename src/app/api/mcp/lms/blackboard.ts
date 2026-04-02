@@ -266,7 +266,9 @@ export async function getCourseContent(params: GetCourseContentParams): Promise<
   const out = await fetchAllPages(apiBaseUrl, url, headers);
   if (out && typeof out === 'object' && Array.isArray((out as PaginatedResponse).results)) {
     const paginated = out as PaginatedResponse;
-    return { ...paginated, results: extractModuleItemData(filterCourseContentResults(paginated.results!)) };
+    const extracted = extractModuleItemData(filterCourseContentResults(paginated.results!)) as { details: unknown }[];
+    const withDetails = extracted.filter((item) => item.details != null);
+    return { ...paginated, results: withDetails };
   }
   return out;
 }
